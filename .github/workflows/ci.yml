@@ -1,0 +1,63 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
+permissions:
+  contents: read
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Configure temporary directories
+        run: |
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "AEGIS_SCREENSHOTS=$RUNNER_TEMP/aegishook-qa" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            adapter/package-lock.json
+      - run: npm run build
+      - run: go test -race ./...
+      - run: npm --prefix adapter ci --no-audit --no-fund
+      - run: npm run adapter:check
+      - run: npm run test:adapter
+      - run: npm run test:opencode
+      - name: Install Chromium
+        if: runner.os == 'Linux'
+        run: npm --prefix web exec -- playwright install --with-deps chromium
+      - name: Browser end-to-end tests
+        if: runner.os == 'Linux'
+        run: npm run test:e2e
+      - name: Upload browser diagnostics
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-diagnostics
+          path: |
+            ${{ runner.temp }}/aegishook-playwright-results
+            ${{ runner.temp }}/aegishook-qa
+          if-no-files-found: ignore
+          retention-days: 7

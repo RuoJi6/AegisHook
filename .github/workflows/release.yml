@@ -1,0 +1,115 @@
+name: Release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag (e.g. v0.1.0)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Validate published version
+        id: release
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo 'Expected a version such as v0.1.0 or v0.2.0-rc.1' >&2
+            exit 1
+          fi
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = false
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+  checks:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.validate.outputs.tag }}
+  build:
+    needs: [validate, checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm --prefix web ci --no-audit --no-fund
+      - run: npm --prefix web run build
+      - run: node scripts/prepare-assets.mjs
+      - name: Build and package
+        env:
+          VERSION: ${{ needs.validate.outputs.tag }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          name="aegishook_${VERSION}_${GOOS}_${GOARCH}"
+          executable=aegishook
+          if [[ "$GOOS" = windows ]]; then executable=aegishook.exe; fi
+          mkdir -p "release/$name"
+          go build -trimpath -ldflags "-s -w -X aegishook/internal/core.ReleaseVersion=$VERSION" -o "release/$name/$executable" ./cmd/aegishook
+          cp LICENSE README.md "release/$name/"
+          node scripts/write-notices.mjs "release/$name/THIRD_PARTY_NOTICES.md"
+          if [[ "$GOOS" = windows ]]; then
+            (cd release && zip -r "$name.zip" "$name")
+          else
+            tar -C release -czf "release/$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            release/*.tar.gz
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Upload archives and checksums to the release
+        working-directory: release
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          gh release upload "$TAG" *.tar.gz *.zip SHA256SUMS.txt --clobber

@@ -1,0 +1,1 @@
+Generated frontend assets: run npm run build before starting the server.

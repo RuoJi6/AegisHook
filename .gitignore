@@ -1,0 +1,27 @@
+node_modules/
+web/dist/
+.cache/
+.data/
+bin/
+*.db
+*.db-*
+.DS_Store
+
+test-results/
+playwright-report/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.token
+*.key
+
+# Local design references and generated QA screenshots
+/design/
+/docs/qa/*.png
+
+# Frontend output is rebuilt by CI before embedding
+/internal/assets/ui/*
+!/internal/assets/ui/placeholder.txt
+/release/
