@@ -47,6 +47,8 @@ export interface Installation {
   entry: string;
   installed: boolean;
   status: string;
+  configStatus: "configured" | "entry_error" | "uninstalled";
+  observed: boolean;
   version: string;
 }
 export interface RuleSemantics {

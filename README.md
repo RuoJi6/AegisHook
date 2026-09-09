@@ -116,7 +116,9 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 - JSON 安装只合并自有事件处理器，保留其他配置；重复安装幂等，已修改的自有入口报告冲突。卸载不修改信任设置，保留原会话使用的连接配置。客户端缓存入口时需重启后才完全移除。
 - 原始工具名和参数不变。Claude/Codex 返回空 JSON 表示本次 AegisHook 审查通过，仍由客户端自身权限判断；拒绝通过客户端协议返回原因并以退出码 2 结束。OpenCode 在工具前回调中抛出错误阻断调用。
 - Claude、Codex 全局和项目 Hook 通过稳定的会话/工具调用 ID 绑定同一裁决；OpenCode 两个入口导入同一模块，并按调用 ID 和参数去重。Grok 官方文档没有保证调用 ID，同一数据目录暂只允许一个 Grok 安装范围，避免无 ID 时重复审查。Grok 同时发现 Claude 配置时，Claude 适配器通过官方 Grok 事件环境变量跳过，由专用 Grok 入口审查。
-- 命令 Hook 和 OpenCode 插件按事件登记会话，仅在等待审查期间维持心跳。界面显示「已收到事件 / 事件接入」及最近事件，不把空闲状态显示为持续在线。会话结束使待审批调用失效；进程被强杀而无结束事件时，等待调用在心跳过期后拒绝。
+- 命令 Hook 和 OpenCode 插件按事件登记会话，仅在等待审查期间维持心跳。界面分别统计持续在线与事件接入；事件会话在 30 秒内收到事件或审查心跳时显示「最近活跃」和彩色状态点，空闲时显示「暂无近期事件」，不据此判断进程退出。安装范围分别展示安装状态（已配置 / 入口异常 / 已卸载）和历史接入验证（已收到过事件 / 尚未收到事件）；会话结束或服务重启不会清除关联安装的历史接入证据。会话结束使待审批调用失效；进程被强杀而无结束事件时，等待调用在心跳过期后拒绝。
+- Codex CLI 与桌面端内置运行时可能版本不同；页面检测到的版本来自 `PATH` 中的 CLI，不能据此断言桌面端版本或 Hook 覆盖。升级 CLI 不会更新桌面应用，二者应分别重启并核对实际事件；同一安装范围的“已收到过事件”不表示两端均已验证。项目信任和 Hook 定义信任是两层检查，安装文件本身不构成接入验证。
+- 子 Agent 的工具审查与父子关系展示是不同能力。当前没有订阅 `SubagentStart` / `SubagentStop`，也没有保存子 Agent 身份字段。Claude 子 Agent 的工具事件带 `agent_id`，Codex 子 Agent Hook 使用父会话 ID，因此调用可能显示在父会话内；Grok 和 OpenCode 的子会话可按自身会话 ID 单独入库，但尚未展示父子关联。Pi 的子进程须独立加载扩展。应按子会话/调用证据核对覆盖，不能用 UI 的子 Agent 数量推断漏审，也不能用已观察到的部分调用承诺完整覆盖。参见 [Claude Hook 输入](https://code.claude.com/docs/en/hooks#common-input-fields)、[Codex Hook 覆盖](https://developers.openai.com/codex/hooks#tool-coverage)、[Grok Hooks](https://docs.x.ai/build/features/hooks) 和 [OpenCode 插件](https://dev.opencode.ai/docs/plugins/)。
 - 执行后事件须能关联原调用并提供可靠状态，才记录成功或失败。Grok 无调用 ID、Codex 没有明确结果状态时保留「等待执行结果」，不会推断成功。客户端自身权限再次拒绝时，也不会凭 AegisHook 许可记录执行成功。
 - 支持 `Read/Write/Edit` 等名称大小写，以及 `path/file_path/filePath`、`command/cmd` 常见参数字段。新增明确的 Windows 账号、服务、防火墙与计划任务命令识别；复杂 PowerShell 和动态脚本仍交给所选审查模式，不表示静态分析证明安全。
 

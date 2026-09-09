@@ -304,6 +304,9 @@ pre {
 .dot.green {
   background: var(--green);
 }
+.dot.event {
+  background: var(--accent);
+}
 .app-shell {
   display: grid;
   grid-template-columns: 228px minmax(0, 1fr);

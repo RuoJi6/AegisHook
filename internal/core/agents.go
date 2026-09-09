@@ -39,19 +39,20 @@ func DetectAgents() []AgentInfo {
 		case "pi":
 			a.Integration = "extension"
 			a.Instructions = "在 Pi 空闲时 /reload 或重启，等待实际心跳。"
-			a.Limitations = "Pi 0.85.1；不覆盖用户 ! 命令或其它扩展内部执行。Windows 需 Git Bash；符号链接需要开发者模式或相应权限。"
+			a.Limitations = "Pi 0.85.1；不覆盖用户 ! 命令或其它扩展内部执行。子进程须自行加载本扩展，父进程的 Hook 不自动覆盖子进程内部工具。Windows 需 Git Bash；符号链接需要开发者模式或相应权限。"
 		case "claude":
 			a.Instructions = "重启 Claude Code，用 /hooks 检查配置；保留客户端自身权限判断。"
+			a.Limitations += " 当前未展示子 Agent 标识，子 Agent 工具事件可能归入父会话；列表中没有独立子会话不等于未审查。"
 		case "codex":
-			a.Instructions = "重启 Codex，使用 /hooks 审阅并信任新 Hook；项目本身也须受信任。"
-			a.Limitations += " 托管工具和后续 write_stdin 输入不触发新的工具前审查。"
+			a.Instructions = "分别重启使用中的 Codex CLI 或桌面端并验证接入；CLI 使用 /hooks 审阅并信任新 Hook，项目本身也须受信任。"
+			a.Limitations += " 此处检测的是 PATH 中的 CLI 版本，不代表桌面端内置版本；需分别核对兼容性和事件；一次接入验证不代表两端均已验证。托管工具和后续 write_stdin 输入不触发新的工具前审查。子 Agent Hook 使用父会话 ID，当前未展示子 Agent 标识。"
 		case "opencode":
 			a.Integration = "plugin"
 			a.Instructions = "重启 OpenCode，插件在会话事件或首次工具调用时注册。"
-			a.Limitations = "不覆盖插件自身的执行；仅在客户端明确报告完成或失败时更新执行结果。"
+			a.Limitations = "不覆盖插件自身的执行；仅在客户端明确报告完成或失败时更新执行结果。子会话按自身 sessionID 记录，当前未展示父子关系。"
 		case "grok":
 			a.Instructions = "重启 Grok Build，项目安装须在客户端 /hooks-trust，使用 /hooks 检查。"
-			a.Limitations += " 无原生调用 ID 时仅记录前置裁决，不推测执行结果；同一数据目录仅允许一个 Grok 安装范围。"
+			a.Limitations += " 无原生调用 ID 时仅记录前置裁决，不推测执行结果；同一数据目录仅允许一个 Grok 安装范围。子会话可单独记录，当前未展示父子关系；运行中或思考中不等于发生工具调用。"
 		}
 		if p, err := exec.LookPath(id); err == nil {
 			a.Path = p

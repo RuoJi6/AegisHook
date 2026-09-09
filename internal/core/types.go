@@ -57,24 +57,27 @@ type Installation struct {
 	Entry          string    `json:"entry"`
 	Installed      bool      `json:"installed"`
 	Status         string    `json:"status"`
+	ConfigStatus   string    `json:"configStatus"`
+	Observed       bool      `json:"observed"`
 	Version        string    `json:"version"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 type Instance struct {
-	DisconnectReason string    `json:"disconnectReason,omitempty"`
-	Agent            string    `json:"agent"`
-	AgentVersion     string    `json:"agentVersion,omitempty"`
-	ConnectionMode   string    `json:"connectionMode,omitempty"`
-	ID               string    `json:"id"`
-	SessionID        string    `json:"sessionId"`
-	Cwd              string    `json:"cwd"`
-	PiVersion        string    `json:"piVersion"`
-	HookVersion      string    `json:"hookVersion"`
-	Installations    []string  `json:"installations"`
-	StartedAt        time.Time `json:"startedAt"`
-	Heartbeat        time.Time `json:"heartbeat"`
-	State            string    `json:"state"`
-	Online           bool      `json:"online"`
+	DisconnectReason      string    `json:"disconnectReason,omitempty"`
+	Agent                 string    `json:"agent"`
+	AgentVersion          string    `json:"agentVersion,omitempty"`
+	ConnectionMode        string    `json:"connectionMode,omitempty"`
+	ID                    string    `json:"id"`
+	SessionID             string    `json:"sessionId"`
+	Cwd                   string    `json:"cwd"`
+	PiVersion             string    `json:"piVersion"`
+	HookVersion           string    `json:"hookVersion"`
+	Installations         []string  `json:"installations"`
+	ObservedInstallations []string  `json:"observedInstallations,omitempty"`
+	StartedAt             time.Time `json:"startedAt"`
+	Heartbeat             time.Time `json:"heartbeat"`
+	State                 string    `json:"state"`
+	Online                bool      `json:"online"`
 }
 type ReviewInput struct {
 	InstanceID  string         `json:"instanceId"`

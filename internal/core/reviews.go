@@ -25,6 +25,9 @@ func (e *Engine) Register(i Instance) error {
 	if i.ID == "" || i.SessionID == "" || !filepath.IsAbs(i.Cwd) || i.HookVersion != Version {
 		return errors.New("会话字段或 Hook 版本无效")
 	}
+	// Keep historical validation separate from bindings for this registration.
+	// Ignore caller-supplied history; only successful registrations establish it.
+	i.ObservedInstallations = nil
 	var prev Instance
 	if e.get("instances", i.ID, &prev) == nil {
 		if prev.SessionID != i.SessionID || prev.Cwd != i.Cwd || AgentID(prev.Agent) != i.Agent {
@@ -32,7 +35,17 @@ func (e *Engine) Register(i Instance) error {
 		}
 		bindings := i.Installations
 		i = prev
+		for _, id := range prev.Installations {
+			if !hasExact(id, i.ObservedInstallations...) {
+				i.ObservedInstallations = append(i.ObservedInstallations, id)
+			}
+		}
 		i.Installations = bindings
+	}
+	for _, id := range i.Installations {
+		if !hasExact(id, i.ObservedInstallations...) {
+			i.ObservedInstallations = append(i.ObservedInstallations, id)
+		}
 	}
 	i.StartedAt = e.clock()
 	i.Heartbeat = e.clock()

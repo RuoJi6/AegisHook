@@ -7,6 +7,7 @@ import {
   agentName,
   connectionLabel,
   isOnlineInstance,
+  isRecentEventInstance,
   date,
   callTitle,
   decisionLabel,
@@ -25,15 +26,7 @@ const sessionCalls = computed(() =>
 );
 const selectedInstance = computed(() => store.instances.find((i) => i.id === selected.value));
 const details = ref("");
-const sortedInstances = computed(() =>
-  [...store.instances].sort(
-    (a, b) =>
-      Number(isOnlineInstance(b)) - Number(isOnlineInstance(a)) ||
-      (Date.parse(b.heartbeat) || 0) - (Date.parse(a.heartbeat) || 0) ||
-      a.id.localeCompare(b.id),
-  ),
-);
-const instancePage = usePagination(() => sortedInstances.value, [() => route.path]);
+const instancePage = usePagination(() => store.sortedInstances, [() => route.path]);
 const timelinePage = usePagination(
   () => sessionCalls.value,
   [selected, () => route.path],
@@ -62,7 +55,7 @@ const timelinePage = usePagination(
       }}</span
     ><span class="muted"
       >配置版本 v{{ store.settings?.version }} ·
-      {{ store.online }} 个在线会话</span
+      {{ store.sessionSummary }}</span
     ><router-link to="/settings" class="text-button"
       >管理审查模式<Icon name="ChevronRight" :size="14"
     /></router-link>
@@ -85,7 +78,8 @@ const timelinePage = usePagination(
           <Icon name="Bot" /><strong>{{ agentName(i.agent) }}</strong
           ><i
             class="dot"
-            :class="{ green: isOnlineInstance(i) }"
+            :class="{ green: isOnlineInstance(i), event: isRecentEventInstance(i) }"
+            :title="connectionLabel(i)"
           />
         </div>
         <p class="mono" :title="i.sessionId">{{ i.sessionId.slice(0, 16) }}</p>

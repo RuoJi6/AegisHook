@@ -129,12 +129,14 @@ onMounted(() => {
       </nav>
       <div class="sidebar-foot">
         <router-link to="/agents" class="health"
-          ><i class="dot" :class="{ green: store.online > 0 }" /><span>{{
+          ><i class="dot" :class="{ green: store.streamOnline && store.online > 0, event: store.streamOnline && !store.online && store.recentEvents > 0 }" /><span>{{
             !store.streamOnline
               ? "审查服务连接失败"
               : store.online
-                ? "已连接 " + store.online + " 个会话"
-                : "暂无持续连接"
+                ? "持续在线 " + store.online + " · 事件接入 " + store.eventConnections
+                : store.eventConnections
+                  ? "事件接入 " + store.eventConnections + " · 最近活跃 " + store.recentEvents
+                  : "暂无会话连接"
           }}</span></router-link
         ><button class="profile" @click="store.logout">
           <span class="avatar">管</span><span>管理员</span

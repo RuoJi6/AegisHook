@@ -189,7 +189,7 @@ const recent = computed(() =>
         ><strong class="pending">{{
           store.calls.filter((c) => c.decision === "pending").length
         }}</strong
-        ><small>{{ store.online }} 个在线会话</small>
+        ><small>{{ store.sessionSummary }}</small>
       </article>
       <article class="panel metric-card">
         <span><Icon name="Bot" />审查 Token</span

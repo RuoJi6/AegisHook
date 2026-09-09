@@ -151,21 +151,31 @@ func (e *Engine) Installations() ([]Installation, error) {
 		i := &is[j]
 		i.Agent = AgentID(i.Agent)
 		i.Status = "uninstalled"
+		i.ConfigStatus = "uninstalled"
+		i.Observed = false
 		if i.Installed {
 			i.Status = "waiting_load"
+			i.ConfigStatus = "configured"
 			link, err := os.Readlink(i.Entry)
 			if (i.Agent == "pi" && (err != nil || link != target)) || (i.Agent != "pi" && !e.agentEntryOK(*i)) {
 				i.Status = "entry_error"
+				i.ConfigStatus = "entry_error"
 			}
 		}
 		for _, instance := range instances {
-			if instance.ConnectionMode == "events" && instance.State != "disconnected" && hasExact(i.ID, instance.Installations...) {
-				if i.Installed && i.Status != "entry_error" {
+			if AgentID(instance.Agent) != i.Agent {
+				continue
+			}
+			bound := hasExact(i.ID, instance.Installations...)
+			observed := bound || hasExact(i.ID, instance.ObservedInstallations...)
+			i.Observed = i.Observed || observed
+			if instance.ConnectionMode == "events" {
+				if observed && i.Installed && i.Status != "entry_error" {
 					i.Status = "observed"
 				}
 				continue
 			}
-			if instance.Online && hasExact(i.ID, instance.Installations...) {
+			if instance.Online && bound {
 				if !i.Installed {
 					i.Status = "waiting_reload"
 				} else if i.Status != "entry_error" {

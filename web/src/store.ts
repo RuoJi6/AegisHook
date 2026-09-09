@@ -11,7 +11,13 @@ import type {
   Settings,
 } from "./types";
 export const isOnlineInstance = (i: Instance) =>
-  i.online && i.connectionMode !== "events";
+  i.online && i.state !== "disconnected" && i.connectionMode !== "events";
+export const isEventInstance = (i: Instance) =>
+  i.connectionMode === "events" && i.state !== "disconnected";
+export const isRecentEventInstance = (i: Instance) =>
+  isEventInstance(i) && i.online;
+export const instanceStatusClass = (i: Instance) =>
+  isOnlineInstance(i) ? "approve" : isRecentEventInstance(i) ? "model" : "";
 
 export async function api<T = any>(
   path: string,
@@ -54,6 +60,19 @@ export const useConsole = defineStore("console", () => {
   );
   const online = computed(
     () => instances.value.filter(isOnlineInstance).length,
+  );
+  const eventConnections = computed(() => instances.value.filter(isEventInstance).length);
+  const recentEvents = computed(() => instances.value.filter(isRecentEventInstance).length);
+  const sessionSummary = computed(() =>
+    `持续在线 ${online.value} · 事件接入 ${eventConnections.value}（最近活跃 ${recentEvents.value}）`,
+  );
+  const sortedInstances = computed(() =>
+    [...instances.value].sort((a, b) =>
+      Number(isOnlineInstance(b) || isRecentEventInstance(b)) -
+        Number(isOnlineInstance(a) || isRecentEventInstance(a)) ||
+      (Date.parse(b.heartbeat) || 0) - (Date.parse(a.heartbeat) || 0) ||
+      a.id.localeCompare(b.id),
+    ),
   );
   let stream: EventSource | undefined,
     refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -167,6 +186,10 @@ export const useConsole = defineStore("console", () => {
     agents,
     pending,
     online,
+    eventConnections,
+    recentEvents,
+    sessionSummary,
+    sortedInstances,
     refresh,
     init,
     login,
@@ -223,7 +246,9 @@ export const connectionLabel = (i: Instance) =>
         : i.disconnectReason === "service_restart"
           ? "待重新接入"
           : "已断开"
-      : "事件接入"
+      : isRecentEventInstance(i)
+        ? "事件接入 · 最近活跃"
+        : "事件接入 · 暂无近期事件"
     : i.online
       ? "在线"
       : "已断开";

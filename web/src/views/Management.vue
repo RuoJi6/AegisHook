@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { api, useConsole, date, agentName, connectionLabel } from "../store";
+import { api, useConsole, date, agentName, connectionLabel, instanceStatusClass } from "../store";
 import type { Rule, Scope } from "../types";
 import { usePagination } from "../pagination";
 import Pagination from "../components/Pagination.vue";
@@ -32,7 +32,7 @@ const headings: Record<string, string> = {
   audit: "审计日志",
 };
 const sub: Record<string, string> = {
-  agents: "管理各 Agent Hook 的安装范围、加载状态与会话连接。",
+  agents: "管理各 Agent Hook 的安装配置、接入验证与当前会话状态。",
   rules: "内置与自定义规则均可编辑；拒绝优先，同类按优先级从高到低匹配。",
   scopes: "为关联项目设置明确的文件路径与目标范围。",
   audit: "追溯每次配置变更、审查裁决和 Hook 生命周期操作。",
@@ -57,11 +57,8 @@ const ruleForm = ref<Rule | null>(null),
 const testTool = ref("bash"),
   testArgs = ref('{"command":"whoami"}'),
   testResult = ref<any>(null);
-const statuses: Record<string, string> = {
-  loaded: "已加载",
-  observed: "已收到事件",
-  waiting_load: "等待加载",
-  waiting_reload: "等待重载",
+const configStatuses: Record<string, string> = {
+  configured: "已配置",
   uninstalled: "已卸载",
   entry_error: "入口异常",
 };
@@ -179,7 +176,7 @@ const auditRows = computed(() =>
   ),
 );
 const installationPage = usePagination(() => store.installations, [kind]);
-const instancePage = usePagination(() => store.instances, [kind]);
+const instancePage = usePagination(() => store.sortedInstances, [kind]);
 const rulePage = usePagination(() => store.rules, [kind]);
 const scopePage = usePagination(() => store.scopes, [kind]);
 const auditPage = usePagination(() => auditRows.value, [kind, filter]);
@@ -265,7 +262,7 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
     <section class="panel">
       <div class="panel-heading">
         <strong>安装范围</strong
-        ><span class="muted">当前用户或指定项目 · 入口与会话状态分别展示</span>
+        ><span class="muted">当前用户或指定项目 · 历史接入验证不随会话结束清除</span>
       </div>
       <div class="table-scroll">
         <table>
@@ -273,7 +270,8 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
             <tr>
               <th>Agent / 安装范围</th>
               <th>入口路径</th>
-              <th>加载状态</th>
+              <th>安装状态</th>
+              <th>接入验证</th>
               <th>版本</th>
               <th>操作</th>
             </tr>
@@ -292,14 +290,18 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
                 <span
                   class="badge"
                   :class="
-                    i.status === 'loaded'
+                    i.configStatus === 'configured'
                       ? 'approve'
-                      : i.status === 'entry_error'
-                        ? 'reject'
-                        : 'pending'
+                      : i.configStatus === 'entry_error' ? 'reject' : ''
                   "
-                  >{{ statuses[i.status] }}</span
-                >
+                  >{{ configStatuses[i.configStatus] }}</span>
+                <small v-if="i.status === 'waiting_reload'">已有会话仍需重载</small>
+              </td>
+              <td>
+                <span class="badge" :class="i.observed ? 'approve' : ''">
+                  {{ i.observed ? "已收到过事件" : "尚未收到事件" }}
+                </span>
+                <small>历史记录，不代表当前会话在线</small>
               </td>
               <td>{{ i.version }}</td>
               <td>
@@ -313,7 +315,7 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
               </td>
             </tr>
             <tr v-if="!store.installations.length">
-              <td colspan="5">
+              <td colspan="6">
                 <div class="empty">
                   <Icon name="Plug" :size="32" /><strong
                     >尚未安装 AegisHook</strong
@@ -361,9 +363,7 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
                 <span
                   class="badge"
                   :class="
-                    i.online && i.connectionMode !== 'events'
-                      ? 'approve'
-                      : 'pending'
+                    instanceStatusClass(i)
                   "
                   >{{ connectionLabel(i) }}</span
                 >
@@ -386,7 +386,7 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
       />
     </section>
     <p class="muted tiny">
-      审查范围以客户端提供的工具事件为准，不逐项拦截脚本内部行为。事件接入表示已收到事件，不代表持续在线。
+      审查范围以客户端提供的工具事件为准，不逐项拦截脚本内部行为。事件接入表示会话曾上报事件；最近活跃表示 30 秒内收到事件或审查心跳，不代表持续在线。安装范围的接入验证保留历史证据，会话结束、失联或服务重启不会清除。
     </p></template
   >
   <template v-if="kind === 'rules'"
