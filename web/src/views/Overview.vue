@@ -6,6 +6,7 @@ import {
   useConsole,
   agentName,
   connectionLabel,
+  isOnlineInstance,
   date,
   callTitle,
   decisionLabel,
@@ -24,7 +25,15 @@ const sessionCalls = computed(() =>
 );
 const selectedInstance = computed(() => store.instances.find((i) => i.id === selected.value));
 const details = ref("");
-const instancePage = usePagination(() => store.instances, [() => route.path]);
+const sortedInstances = computed(() =>
+  [...store.instances].sort(
+    (a, b) =>
+      Number(isOnlineInstance(b)) - Number(isOnlineInstance(a)) ||
+      (Date.parse(b.heartbeat) || 0) - (Date.parse(a.heartbeat) || 0) ||
+      a.id.localeCompare(b.id),
+  ),
+);
+const instancePage = usePagination(() => sortedInstances.value, [() => route.path]);
 const timelinePage = usePagination(
   () => sessionCalls.value,
   [selected, () => route.path],
@@ -76,7 +85,7 @@ const timelinePage = usePagination(
           <Icon name="Bot" /><strong>{{ agentName(i.agent) }}</strong
           ><i
             class="dot"
-            :class="{ green: i.online && i.connectionMode !== 'events' }"
+            :class="{ green: isOnlineInstance(i) }"
           />
         </div>
         <p class="mono" :title="i.sessionId">{{ i.sessionId.slice(0, 16) }}</p>

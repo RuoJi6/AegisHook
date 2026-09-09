@@ -10,6 +10,9 @@ import type {
   Scope,
   Settings,
 } from "./types";
+export const isOnlineInstance = (i: Instance) =>
+  i.online && i.connectionMode !== "events";
+
 export async function api<T = any>(
   path: string,
   method = "GET",
@@ -50,9 +53,7 @@ export const useConsole = defineStore("console", () => {
     calls.value.filter((c) => c.decision === "pending" && c.mode === "human"),
   );
   const online = computed(
-    () =>
-      instances.value.filter((i) => i.online && i.connectionMode !== "events")
-        .length,
+    () => instances.value.filter(isOnlineInstance).length,
   );
   let stream: EventSource | undefined,
     refreshTimer: ReturnType<typeof setTimeout> | undefined;
