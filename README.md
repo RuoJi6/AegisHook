@@ -8,6 +8,14 @@
 
 本机运行的 Go + Vue 3 控制台，为 Pi、Claude Code、Codex、OpenCode、Grok Build 提供工具调用前审查、人工审批、模型裁决与审计。支持自定义本机回环地址和端口，使用 `-h` 或 `--help` 查看命令帮助。提供 macOS、Linux、Windows 构建。Windows 已完成交叉编译，尚未进行实机验收。
 
+![image-20260909171623533](assets/image-20260909171623533.png)
+
+![image-20260909171716177](assets/image-20260909171716177.png)
+
+![image-20260909172048294](assets/image-20260909172048294.png)
+
+
+
 ## 下载与版本发布
 
 从 [GitHub Releases](https://github.com/RuoJi6/AegisHook/releases) 下载对应平台压缩包，解压后运行其中的 `aegishook`（Windows 为 `aegishook.exe`）。发布包包含已编译的 Vue 页面和 Hook 资源，不需要另外安装 Go、Node 或前端依赖；Agent 本身仍需单独安装。
