@@ -124,6 +124,9 @@ func Open(dir string) (*Engine, error) {
 	}
 	instances, _ := e.Instances()
 	for _, i := range instances {
+		if i.State != "disconnected" {
+			i.DisconnectReason = "service_restart"
+		}
 		i.State = "disconnected"
 		i.Online = false
 		e.put("instances", i.ID, i)

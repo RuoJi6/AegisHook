@@ -37,6 +37,7 @@ func (e *Engine) Register(i Instance) error {
 	i.StartedAt = e.clock()
 	i.Heartbeat = e.clock()
 	i.State = "idle"
+	i.DisconnectReason = ""
 	i.Online = true
 	return e.change("instances", i.ID, i, "instance.register", AgentName(i.Agent)+" 会话事件已接入")
 }
@@ -64,6 +65,7 @@ func (e *Engine) Disconnect(id string) error {
 		return err
 	}
 	i.State = "disconnected"
+	i.DisconnectReason = "session_end"
 	i.Online = false
 	if err := e.change("instances", id, i, "instance.disconnect", AgentName(i.Agent)+" 会话已断开"); err != nil {
 		return err

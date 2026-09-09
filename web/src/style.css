@@ -1048,11 +1048,22 @@ td .tool-tag {
   margin-left: auto;
 }
 .session-item small {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--muted);
 }
 .path-text {
   overflow-wrap: anywhere;
   max-width: 450px;
+}
+.timeline-scope {
+  padding: 8px 18px;
+  overflow-wrap: anywhere;
+}
+.timeline-source {
+  padding-top: 10px;
+  overflow-wrap: anywhere;
 }
 .timeline-item {
   padding: 0 18px;

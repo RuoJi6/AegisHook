@@ -116,10 +116,10 @@ async function decide(c: Call, d: string) {
                 <code class="tool-tag">{{ c.toolName }}</code>
               </td>
               <td class="source-cell">
-                <strong :title="c.cwd">{{
-                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "Agent"
-                }}</strong
-                ><small>{{ agentName(c.agent) }}</small
+                <strong>{{ agentName(c.agent) }}</strong
+                ><small :title="c.cwd">项目：{{
+                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
+                }}</small
                 ><small :title="c.sessionId">{{
                   c.sessionId.slice(0, 12)
                 }}</small>
@@ -246,10 +246,10 @@ async function decide(c: Call, d: string) {
                 }}</code>
               </td>
               <td class="source-cell">
-                <strong :title="c.cwd">{{
-                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "Agent"
-                }}</strong
-                ><small>{{ agentName(c.agent) }}</small
+                <strong>{{ agentName(c.agent) }}</strong
+                ><small :title="c.cwd">项目：{{
+                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
+                }}</small
                 ><small :title="c.sessionId">{{
                   c.sessionId.slice(0, 12)
                 }}</small>

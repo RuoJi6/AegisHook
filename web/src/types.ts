@@ -25,6 +25,7 @@ export interface Call {
   deadline: string;
 }
 export interface Instance {
+  disconnectReason?: string;
   agent?: string;
   agentVersion?: string;
   connectionMode?: string;

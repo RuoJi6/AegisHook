@@ -61,19 +61,20 @@ type Installation struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 type Instance struct {
-	Agent          string    `json:"agent"`
-	AgentVersion   string    `json:"agentVersion,omitempty"`
-	ConnectionMode string    `json:"connectionMode,omitempty"`
-	ID             string    `json:"id"`
-	SessionID      string    `json:"sessionId"`
-	Cwd            string    `json:"cwd"`
-	PiVersion      string    `json:"piVersion"`
-	HookVersion    string    `json:"hookVersion"`
-	Installations  []string  `json:"installations"`
-	StartedAt      time.Time `json:"startedAt"`
-	Heartbeat      time.Time `json:"heartbeat"`
-	State          string    `json:"state"`
-	Online         bool      `json:"online"`
+	DisconnectReason string    `json:"disconnectReason,omitempty"`
+	Agent            string    `json:"agent"`
+	AgentVersion     string    `json:"agentVersion,omitempty"`
+	ConnectionMode   string    `json:"connectionMode,omitempty"`
+	ID               string    `json:"id"`
+	SessionID        string    `json:"sessionId"`
+	Cwd              string    `json:"cwd"`
+	PiVersion        string    `json:"piVersion"`
+	HookVersion      string    `json:"hookVersion"`
+	Installations    []string  `json:"installations"`
+	StartedAt        time.Time `json:"startedAt"`
+	Heartbeat        time.Time `json:"heartbeat"`
+	State            string    `json:"state"`
+	Online           bool      `json:"online"`
 }
 type ReviewInput struct {
 	InstanceID  string         `json:"instanceId"`

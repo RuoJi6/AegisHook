@@ -217,7 +217,11 @@ export const agentName = (id?: string) =>
 export const connectionLabel = (i: Instance) =>
   i.connectionMode === "events"
     ? i.state === "disconnected"
-      ? "已结束"
+      ? i.disconnectReason === "session_end"
+        ? "已结束"
+        : i.disconnectReason === "service_restart"
+          ? "待重新接入"
+          : "已断开"
       : "事件接入"
     : i.online
       ? "在线"

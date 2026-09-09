@@ -872,3 +872,8 @@ test("post-verification data guard defaults off and preserves prompt edits", asy
   });
   expect(errors).toEqual([]);
 });
+
+test("multiple agents retain distinct sources, lifecycle labels and timelines", async ({ page }) => {
+  const { checkMultiAgentDisplay } = await import("./multi-agent-checks");
+  await checkMultiAgentDisplay(page);
+});

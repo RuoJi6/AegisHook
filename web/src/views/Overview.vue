@@ -22,6 +22,7 @@ const isSessions = computed(() => route.path === "/sessions");
 const sessionCalls = computed(() =>
   store.calls.filter((c) => !selected.value || c.instanceId === selected.value),
 );
+const selectedInstance = computed(() => store.instances.find((i) => i.id === selected.value));
 const details = ref("");
 const instancePage = usePagination(() => store.instances, [() => route.path]);
 const timelinePage = usePagination(
@@ -68,6 +69,7 @@ const timelinePage = usePagination(
         :key="i.id"
         class="session-item"
         :class="{ active: selected === i.id }"
+        :aria-pressed="selected === i.id"
         @click="selected = i.id"
       >
         <div class="inline">
@@ -77,7 +79,8 @@ const timelinePage = usePagination(
             :class="{ green: i.online && i.connectionMode !== 'events' }"
           />
         </div>
-        <p class="mono">{{ i.sessionId.slice(0, 16) }}</p>
+        <p class="mono" :title="i.sessionId">{{ i.sessionId.slice(0, 16) }}</p>
+        <small :title="i.cwd">项目：{{ i.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供" }}</small>
         <small>{{ connectionLabel(i) }} · {{ date(i.heartbeat) }}</small>
       </button>
       <div v-if="!store.instances.length" class="empty">
@@ -96,6 +99,7 @@ const timelinePage = usePagination(
         <strong><Icon name="Activity" />执行时间线</strong
         ><button class="text-button" @click="selected = ''">全部会话</button>
       </div>
+      <p class="timeline-scope muted tiny">{{ selectedInstance ? agentName(selectedInstance.agent) + " · " + selectedInstance.sessionId.slice(0, 12) : "当前显示全部会话" }}</p>
       <div v-if="!sessionCalls.length" class="empty">
         <Icon name="Workflow" :size="36" /><strong>等待首次工具调用</strong>
         <p>安装 Hook 后重载或重启 Agent，完成客户端的信任确认后开始审查。</p>
@@ -104,6 +108,9 @@ const timelinePage = usePagination(
         /></router-link>
       </div>
       <div v-for="c in timelinePage.rows" :key="c.id" class="timeline-item">
+        <div class="timeline-source muted tiny">
+          <strong>{{ agentName(c.agent) }}</strong> · <span :title="c.cwd">项目：{{ c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供" }}</span> · <span :title="c.sessionId">{{ c.sessionId.slice(0, 12) }}</span>
+        </div>
         <div class="timeline-row">
           <i class="timeline-node" :class="c.decision" /><span
             class="muted nowrap"
