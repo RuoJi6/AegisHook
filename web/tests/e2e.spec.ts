@@ -585,7 +585,9 @@ test("full local console workflow and visual states", async ({
     ).toBeVisible();
     await page.getByRole("button", { name: "卸载", exact: true }).click();
     await page.getByRole("button", { name: "移除入口" }).click();
-    await expect(page.locator("table").first()).toContainText("等待重载");
+    await expect(page.locator("table").first()).toContainText("已卸载");
+    await expect(page.locator("table").first()).toContainText("已有会话仍需重载");
+    await expect(page.locator("table").first()).toContainText("已收到过事件");
     await request.post(base + "/api/v1/instances/browser-fixture/shutdown", {
       headers: hook,
       data: {},
