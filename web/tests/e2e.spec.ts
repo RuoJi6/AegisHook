@@ -24,7 +24,8 @@ async function choose(page: Page, name: string, option: string) {
 let dir: string, proc: ChildProcess, modelServer: Server;
 const base = "http://127.0.0.1:18794";
 test.use({ deviceScaleFactor: 2 });
-test.beforeAll(async () => {
+// Each test owns its service and data; the offline test stops its own process.
+test.beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "aegis-browser-"));
   await mkdir(join(dir, "data"));
   await mkdir(join(dir, "project"));
@@ -83,12 +84,17 @@ test.beforeAll(async () => {
   modelServer.listen(18795, "127.0.0.1");
   await once(modelServer, "listening");
 });
-test.afterAll(async () => {
+test.afterEach(async () => {
   if (proc?.exitCode === null) {
     proc.kill("SIGTERM");
     await once(proc, "exit");
   }
-  modelServer?.close();
+  if (modelServer?.listening) {
+    modelServer.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      modelServer.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
   await rm(dir, { recursive: true, force: true });
 });
 test("full local console workflow and visual states", async ({
