@@ -56,7 +56,7 @@
   letter-spacing: -0.4px;
   min-height: 49px;
 }
-.sidebar .brand > .lucide {
+.sidebar .brand > .brand-logo {
   width: 28px;
   height: 28px;
   stroke-width: 2;
@@ -545,7 +545,7 @@ input[type="checkbox"] {
     padding: 0 7px 20px;
     min-height: 42px;
   }
-  .sidebar .brand > .lucide {
+  .sidebar .brand > .brand-logo {
     width: 24px;
     height: 24px;
   }

@@ -1,10 +1,12 @@
 # AegisHook
 
+<img src="web/public/logo.svg" alt="AegisHook 盾牌与钩子标识" width="72" height="72">
+
 [![CI](https://github.com/RuoJi6/AegisHook/actions/workflows/ci.yml/badge.svg)](https://github.com/RuoJi6/AegisHook/actions/workflows/ci.yml)
 [![Release](https://github.com/RuoJi6/AegisHook/actions/workflows/release.yml/badge.svg)](https://github.com/RuoJi6/AegisHook/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-本机运行的 Go + Vue 3 控制台，为 Pi、Claude Code、Codex、OpenCode、Grok Build 提供工具调用前审查、人工审批、模型裁决与审计。提供 macOS、Linux、Windows 构建；只监听回环地址。Windows 已完成交叉编译，尚未进行实机验收。
+本机运行的 Go + Vue 3 控制台，为 Pi、Claude Code、Codex、OpenCode、Grok Build 提供工具调用前审查、人工审批、模型裁决与审计。支持自定义本机回环地址和端口，使用 `-h` 或 `--help` 查看命令帮助。提供 macOS、Linux、Windows 构建。Windows 已完成交叉编译，尚未进行实机验收。
 
 ## 下载与版本发布
 
@@ -32,6 +34,33 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 
 省略 `--data-dir` 时使用 `~/.aegishook`。本次开发运行使用 `.data/local`；其中包含私有令牌、模型密钥与 SQLite，不纳入源码交付。关闭服务后，能够运行的 AegisHook 适配器会明确拒绝新工具调用。客户端未加载 Hook、未启动命令或将其强制超时终止时，客户端行为另见下方接入边界。
 
+### 自定义本机地址、端口与帮助
+
+默认监听 `127.0.0.1:18790`。可分别使用 `--host` 和 `--port`，也可继续使用完整地址参数 `--addr`：
+
+```sh
+./bin/aegishook --host localhost --port 18800 --data-dir .data/local
+./bin/aegishook serve --host ::1 --port 18800 --data-dir .data/local
+./bin/aegishook serve --addr 127.0.0.1:18800 --data-dir .data/local
+
+./bin/aegishook -h
+./bin/aegishook --help
+./bin/aegishook install -h
+./bin/aegishook hook -h
+```
+
+省略命令时默认执行 `serve`。`--host` 只接受本机回环地址（`localhost`、`127.x.x.x`、`::1`），不接受 `0.0.0.0` 或局域网地址；端口范围为 `1–65535`。IPv6 的完整地址写作 `--addr '[::1]:18800'`。`--addr` 与 `--host/--port` 不能同时使用。帮助命令显示用法后正常退出，不创建数据或启动服务。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--host` | `127.0.0.1` | 本机回环地址；IPv6 示例为 `::1` |
+| `--port` | `18790` | 监听端口，范围 `1–65535` |
+| `--addr` | 未设置 | 一次指定地址和端口，兼容原有用法；与 `--host/--port` 互斥 |
+| `--data-dir` | `~/.aegishook` | 保存数据库、令牌和 Hook 连接配置的私有目录 |
+| `-h`、`--help` | — | 显示命令帮助后退出；也支持 `aegishook <命令> -h` |
+
+`serve`、`install`、`uninstall`、`status` 均支持上述地址和端口参数。访问页面时使用实际配置的地址，例如 `http://localhost:18800` 或 `http://[::1]:18800`。端口被占用时，可换一个端口重新启动。
+
 ## 接入 Pi
 
 1. 打开「Agent 接入」，选择当前用户全局或指定项目，创建 Hook 入口。
@@ -47,7 +76,7 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 ./bin/aegishook uninstall --data-dir .data/local --id INSTALLATION_ID
 ```
 
-命令检测到服务运行时通过管理 API 操作；同一数据目录不允许多个服务进程同时打开。自定义端口时，所有命令使用相同的 `--addr`。
+命令检测到服务运行时通过管理 API 操作；同一数据目录不允许多个服务进程同时打开。自定义地址或端口时，所有命令使用相同的 `--host/--port` 或 `--addr`，例如 `./bin/aegishook status --data-dir .data/local --host localhost --port 18800`。更换监听地址后，重载或重启已接入的 Agent，使其读取更新后的连接配置。
 
 - 全局目录尊重 `PI_CODING_AGENT_DIR`，默认 `~/.pi/agent`；可用 `--agent-dir` 显式指定。
 - 入口为 `extensions/aegishook.ts`。项目入口位于项目 `.pi/extensions/`。
@@ -90,6 +119,11 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 ```powershell
 .\bin\aegishook-windows-amd64.exe serve --data-dir "$env:LOCALAPPDATA\AegisHook"
 .\bin\aegishook-windows-amd64.exe install --data-dir "$env:LOCALAPPDATA\AegisHook" --agent claude --scope project --project "C:\work\project"
+
+# 自定义本机地址和端口
+.\bin\aegishook-windows-amd64.exe serve --host localhost --port 18800 --data-dir "$env:LOCALAPPDATA\AegisHook"
+.\bin\aegishook-windows-amd64.exe status --host localhost --port 18800 --data-dir "$env:LOCALAPPDATA\AegisHook"
+.\bin\aegishook-windows-amd64.exe -h
 ```
 
 服务使用 Windows 文件锁；命令 Hook 使用 PowerShell，并保留原进程退出码。Pi 符号链接安装还需要 Windows 开发者模式或创建符号链接权限，Pi 的 Bash 工具需要 Git Bash。Windows 私有目录的访问范围由本机 ACL 决定，应放在当前用户私有目录；POSIX 的 0600 权限不能等同于 Windows ACL 隔离。本次没有 Windows 实机，安装、Shell 选择与客户端信任流程仍需在目标机器验证。
@@ -128,6 +162,8 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 参考：[阿里云 OpenAI 兼容文档](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope)、[Anthropic Messages 兼容文档](https://help.aliyun.com/zh/model-studio/anthropic-api-messages)。
 
 ## 页面与数据
+
+项目标识采用紫色「盾牌与钩子」融合造型，SVG 使用透明背景。登录页、加载页、侧栏与浏览器标签页统一使用 [logo.svg](web/public/logo.svg)，页面通过 [BrandLogo.vue](web/src/components/BrandLogo.vue) 复用图标，并适配侧栏折叠与窄屏显示。更新程序后，重启服务并刷新页面即可加载新图标。
 
 - 总览、执行会话：实际连接、调用统计、审查及执行时间线。
 - 工具调用、审批与拦截：待审批、筛选、参数与上下文、裁决原因、执行结果、JSON 导出。
@@ -170,6 +206,8 @@ npm run test:e2e
 `npm run build` 构建 Vue 并将页面与适配器内嵌进 Go 程序，产物为 `bin/aegishook`。纯 Go SQLite 驱动不依赖本机 C 编译器。可以通过 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/aegishook-linux-amd64 ./cmd/aegishook` 构建 Linux 版；设置 `GOOS=windows GOARCH=amd64` 并将输出命名为 `.exe` 可构建 Windows 版。Windows 原生完整构建可运行 `powershell -File scripts/build.ps1`。
 
 适配器测试使用 Pi 0.85.1 的真实扩展加载器和 Agent 循环，但工具与模型是隔离替身，绝不删除实际账号或修改密码。浏览器测试在临时数据目录运行，使用 18794/18795/18797；Pi 适配器测试使用 18792，OpenCode 回调测试使用 18798。测试数据不会进入正常控制台。
+
+命令行测试覆盖默认地址、自定义端口、`localhost`、IPv4/IPv6 回环地址、原有 `--addr`、参数冲突、非法地址/端口和帮助输出。Go 服务与命令 Hook 共用回环地址校验，Pi 适配器单独验证同一范围，确保自定义地址仍可完成连接与审查。
 
 已有 Chromium 可通过 `AEGIS_CHROMIUM=/absolute/path/to/chromium npm run test:e2e` 指定。若使用受限沙箱，测试需要回环端口和浏览器启动权限。
 

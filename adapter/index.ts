@@ -6,6 +6,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { isIPv4, isIPv6 } from "node:net";
 
 type Config = { endpoint: string; token: string };
 type Review = {
@@ -15,6 +16,16 @@ type Review = {
   deadline: string;
 };
 export const HOOK_VERSION = "0.1.0";
+
+export function isLoopbackHost(host: string): boolean {
+  const value = host.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    value === "localhost" ||
+    (isIPv4(value) && value.startsWith("127.")) ||
+    (isIPv6(value) &&
+      (value === "::1" || /^::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}$/.test(value)))
+  );
+}
 
 export function validateDecision(value: unknown): Review {
   const r = value as Review;
@@ -123,7 +134,7 @@ export default function aegisHook(pi: ExtensionAPI) {
       );
       const u = new URL(candidate.endpoint);
       if (
-        !["127.0.0.1", "localhost", "[::1]"].includes(u.hostname) ||
+        !isLoopbackHost(u.hostname) ||
         u.protocol !== "http:" ||
         u.username ||
         u.password ||

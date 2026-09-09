@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { validateDecision } from "./index";
+import { isLoopbackHost, validateDecision } from "./index";
 const root = dirname(fileURLToPath(import.meta.url));
 const piRequire = createRequire(
   join(root, "node_modules/@earendil-works/pi-coding-agent/package.json"),
@@ -20,6 +20,36 @@ const { loadExtensions } = await import(
     ),
   ).href
 );
+
+test("custom loopback endpoints remain local", () => {
+  for (const host of [
+    "localhost",
+    "127.0.0.1",
+    "127.0.0.2",
+    "[::1]",
+    "[::ffff:7f00:2]",
+  ]) {
+    assert.equal(
+      isLoopbackHost(new URL(`http://${host}:18800`).hostname),
+      true,
+      host,
+    );
+  }
+  for (const host of [
+    "0.0.0.0",
+    "192.168.1.2",
+    "[::]",
+    "[::ffff:c0a8:102]",
+    "localhost.evil.example",
+    "127.0.0.1.evil.example",
+  ]) {
+    assert.equal(
+      isLoopbackHost(new URL(`http://${host}:18800`).hostname),
+      false,
+      host,
+    );
+  }
+});
 
 test("invalid decisions are fail-closed", () => {
   for (const value of [

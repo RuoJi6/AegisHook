@@ -3,6 +3,7 @@ package bridge
 
 import (
 	"aegishook/internal/core"
+	"aegishook/internal/localaddr"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -137,7 +138,7 @@ func Run(agent, connection string, in io.Reader, out, stderr io.Writer) (code in
 		return fail(errors.New("无法读取 Hook 连接配置"))
 	}
 	u, err := url.Parse(cfg.Endpoint)
-	if err != nil || u.Scheme != "http" || !contains(u.Hostname(), "127.0.0.1", "localhost", "::1") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || cfg.Token == "" {
+	if err != nil || u.Scheme != "http" || !localaddr.IsLoopback(u.Hostname()) || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || cfg.Token == "" {
 		return fail(errors.New("Hook 连接必须使用本机回环地址"))
 	}
 	cfg.Endpoint = strings.TrimRight(cfg.Endpoint, "/")

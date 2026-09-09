@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useConsole } from "./store";
 import Icon from "./components/Icon.vue";
+import BrandLogo from "./components/BrandLogo.vue";
 const store = useConsole(),
   router = useRouter();
 const token = ref(""),
@@ -67,13 +68,13 @@ onMounted(() => {
 </script>
 <template>
   <div v-if="!store.ready" class="loading-page">
-    <Icon name="ShieldCheck" :size="40" />
+    <BrandLogo :size="40" />
     <p>正在连接本机控制台…</p>
   </div>
   <div v-else-if="!store.authenticated" class="login-page">
     <form class="login-panel" @submit.prevent="login">
       <div class="brand large">
-        <Icon name="ShieldCheck" :size="38" /><span
+        <BrandLogo :size="38" /><span
           >AegisHook<small>Agent 执行审查控制台</small></span
         >
       </div>
@@ -103,7 +104,7 @@ onMounted(() => {
   <div v-else class="app-shell" :class="{ collapsed }">
     <aside class="sidebar">
       <router-link to="/overview" class="brand"
-        ><Icon name="ShieldCheck" :size="34" /><span
+        ><BrandLogo :size="34" /><span
           >AegisHook</span
         ></router-link
       >

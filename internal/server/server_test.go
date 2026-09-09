@@ -69,3 +69,23 @@ func TestSPADeepLinkNoRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomLoopbackHosts(t *testing.T) {
+	e, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	h := New(e, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("app")}}, "a", "h", t.TempDir()).Handler()
+	for _, host := range []string{"localhost:18800", "127.0.0.2:18800", "[::1]:18800", "[::ffff:127.0.0.2]:18800"} {
+		t.Run(host, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "http://"+host+"/api/v1/login", strings.NewReader(`{"token":"a"}`))
+			r.Header.Set("Origin", "http://"+host)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("login got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}

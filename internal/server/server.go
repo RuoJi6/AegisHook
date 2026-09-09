@@ -2,6 +2,7 @@ package server
 
 import (
 	"aegishook/internal/core"
+	"aegishook/internal/localaddr"
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
@@ -476,7 +477,7 @@ func (s *Server) Handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
-func hasHost(h string) bool { return h == "localhost" || h == "127.0.0.1" || h == "::1" }
+func hasHost(h string) bool { return localaddr.IsLoopback(h) }
 func hookAllowed(r *http.Request) bool {
 	p := r.URL.Path
 	return (r.Method == "POST" && (p == "/api/v1/instances" || p == "/api/v1/reviews" || strings.HasPrefix(p, "/api/v1/instances/") || strings.HasPrefix(p, "/api/v1/reviews/"))) || (r.Method == "GET" && strings.HasPrefix(p, "/api/v1/reviews/"))

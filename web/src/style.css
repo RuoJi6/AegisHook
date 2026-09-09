@@ -1222,7 +1222,7 @@ td .tool-tag {
   padding: 0;
   justify-content: center;
 }
-.collapsed .brand > .lucide {
+.collapsed .brand > .brand-logo {
   width: 29px;
 }
 .collapsed .health {
@@ -1363,7 +1363,7 @@ td .tool-tag {
   .profile > .lucide {
     display: none;
   }
-  .sidebar .brand > .lucide {
+  .sidebar .brand > .brand-logo {
     width: 25px;
   }
   .nav-item {

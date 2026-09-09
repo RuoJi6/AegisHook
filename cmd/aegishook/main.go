@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,6 +33,9 @@ func main() {
 		agent := f.String("agent", "", "客户端类型")
 		connection := f.String("connection", "", "连接配置")
 		if err := f.Parse(os.Args[2:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return
+			}
 			os.Exit(2)
 		}
 		os.Exit(bridge.Run(*agent, *connection, os.Stdin, os.Stdout, os.Stderr))
@@ -41,36 +45,19 @@ func main() {
 	}
 }
 func run() error {
-	command := "serve"
-	args := os.Args[1:]
-	if len(args) > 0 && args[0][0] != '-' {
-		command = args[0]
-		args = args[1:]
+	o, err := parseOptions(os.Args[1:], os.Stdout)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
 	}
-	flags := flag.NewFlagSet("aegishook "+command, flag.ExitOnError)
-	home, _ := os.UserHomeDir()
-	data := flags.String("data-dir", filepath.Join(home, ".aegishook"), "私有数据目录")
-	addr := flags.String("addr", "127.0.0.1:18790", "本机监听地址")
-	agent := flags.String("agent", "pi", "pi、claude、codex、opencode、grok")
-	scope := flags.String("scope", "global", "global 或 project")
-	project := flags.String("project", "", "项目绝对路径")
-	id := flags.String("id", "", "安装记录 ID")
-	agentDir := flags.String("agent-dir", core.AgentDir(), "Pi 用户目录")
-	flags.Parse(args)
-	host, _, err := net.SplitHostPort(*addr)
 	if err != nil {
 		return err
 	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("仅支持回环 IP 监听")
-	}
-	if command != "serve" {
-		if ok, err := remoteCommand(command, *data, *addr, *scope, *project, *id, *agent); ok {
+	if o.command != "serve" {
+		if ok, err := remoteCommand(o.command, o.dataDir, o.addr, o.scope, o.project, o.id, o.agent); ok {
 			return err
 		}
 	}
-	e, err := core.Open(*data)
+	e, err := core.Open(o.dataDir)
 	if err != nil {
 		return err
 	}
@@ -87,7 +74,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err = e.PrepareAdapter(code, "http://"+*addr, hook); err != nil {
+	if err = e.PrepareAdapter(code, "http://"+o.addr, hook); err != nil {
 		return err
 	}
 	plugin, err := assets.Files.ReadFile("opencode.mjs")
@@ -101,18 +88,18 @@ func run() error {
 	if err = e.PrepareIntegrations(plugin, binary); err != nil {
 		return err
 	}
-	switch command {
+	switch o.command {
 	case "install":
-		v, err := e.InstallAgent(*agent, *scope, *project, *agentDir)
+		v, err := e.InstallAgent(o.agent, o.scope, o.project, o.agentDir)
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(v)
 	case "uninstall":
-		if *id == "" {
+		if o.id == "" {
 			return fmt.Errorf("请用 --id 指定 status 中的安装记录")
 		}
-		return e.Uninstall(*id)
+		return e.Uninstall(o.id)
 	case "status":
 		is, err := e.Installations()
 		if err != nil {
@@ -131,13 +118,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	s := server.New(e, ui, admin, hook, *agentDir)
-	httpServer := &http.Server{Addr: *addr, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
-	listener, err := net.Listen("tcp", *addr)
+	s := server.New(e, ui, admin, hook, o.agentDir)
+	httpServer := &http.Server{Addr: o.addr, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	listener, err := net.Listen("tcp", o.addr)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("AegisHook %s: http://%s\n首次登录：使用 %s 中的管理令牌。\n", core.ReleaseVersion, *addr, filepath.Join(e.Dir, "admin.token"))
+	fmt.Printf("AegisHook %s: http://%s\n首次登录：使用 %s 中的管理令牌。\n", core.ReleaseVersion, o.addr, filepath.Join(e.Dir, "admin.token"))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
