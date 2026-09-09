@@ -87,7 +87,8 @@ test("multi-agent project installation, actual event states and responsive theme
       .first()
       .locator("tbody>tr")
       .filter({ hasText: name });
-    await expect(row).toContainText("等待加载");
+    await expect(row).toContainText("已配置");
+    await expect(row).toContainText("尚未收到事件");
     const registration = await request.post(base + "/api/v1/instances", {
       headers: { Authorization: "Bearer fixture-hook" },
       data: {
@@ -100,7 +101,8 @@ test("multi-agent project installation, actual event states and responsive theme
       },
     });
     expect(registration.ok()).toBeTruthy();
-    await expect(row).toContainText("已收到事件");
+    await expect(row).toContainText("已配置");
+    await expect(row).toContainText("已收到过事件");
     await expect(
       page
         .locator("table")
@@ -142,9 +144,26 @@ test("multi-agent project installation, actual event states and responsive theme
     .first()
     .locator("tbody>tr")
     .filter({ hasText: "Claude Code" });
+  const shutdown = await request.post(
+    base + "/api/v1/instances/claude/shutdown",
+    {
+      headers: { Authorization: "Bearer fixture-hook" },
+    },
+  );
+  expect(shutdown.ok()).toBeTruthy();
+  await expect(
+    page
+      .locator("table")
+      .nth(1)
+      .locator("tbody>tr")
+      .filter({ hasText: "Claude Code" }),
+  ).toContainText("已结束");
+  await expect(row).toContainText("已配置");
+  await expect(row).toContainText("已收到过事件");
   await row.getByRole("button", { name: "卸载", exact: true }).click();
   await page.getByRole("button", { name: "移除入口" }).click();
   await expect(row).toContainText("已卸载");
+  await expect(row).toContainText("已收到过事件");
   expect(
     JSON.parse(
       await readFile(join(dir, "project", ".claude", "settings.json"), "utf8"),
@@ -156,7 +175,7 @@ test("multi-agent project installation, actual event states and responsive theme
       .first()
       .locator("tbody>tr")
       .filter({ hasText: "Codex" }),
-  ).toContainText("已收到事件");
+  ).toContainText("已收到过事件");
   await page.goto(base + "/sessions");
   await expect(page.locator(".session-item")).toHaveCount(4);
   await expect(page.locator(".session-item").first()).toContainText("事件接入");

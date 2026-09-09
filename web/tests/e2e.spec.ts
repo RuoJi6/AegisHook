@@ -121,7 +121,8 @@ test("full local console workflow and visual states", async ({
     .locator(".modal")
     .getByRole("button", { name: "安装 Hook", exact: true })
     .click();
-  await expect(page.locator("table").first()).toContainText("等待加载");
+  await expect(page.locator("table").first()).toContainText("已配置");
+  await expect(page.locator("table").first()).toContainText("尚未收到事件");
   const hook = { Authorization: "Bearer browser-test-hook" };
   async function call(tool: string, args: any, id: string) {
     const r = await request.post(base + "/api/v1/reviews", {
