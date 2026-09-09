@@ -261,7 +261,7 @@ async function restore() {
         :model-value="dataGuardEnabled"
         :disabled="!promptTemplate"
         label="限制漏洞确认后的批量取数"
-        :description="'结合上下文中的漏洞验证证据，拦截超出最小验证需要的持续取数，包括分页、遍历 ID 和拆分请求；不按 --dump 等命令关键词判断。\n默认提示词已开启。切换会插入或移除对应规则块，保存设置后生效。\n仅作用于进入模型审查的调用，前置允许规则仍可能直接放行。'"
+        :description="'结合上下文中的漏洞验证证据，拦截超出最小验证需要的持续取数，包括分页、遍历 ID 和拆分请求；不按 --dump 等命令关键词判断。\n默认关闭，按需开启。切换会插入或移除对应规则块，保存设置后生效。\n仅作用于进入模型审查的调用，前置允许规则仍可能直接放行。'"
         @update:model-value="toggleDataGuard"
       />
       <label

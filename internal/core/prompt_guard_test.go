@@ -44,7 +44,7 @@ func TestModelDataGuardPipeline(t *testing.T) {
 			return
 		}
 		if payload.Messages[0].Role != "system" || !strings.Contains(payload.Messages[0].Content, DataGuardPrompt) {
-			t.Error("default data guard not sent to reviewer")
+			t.Error("enabled data guard not sent to reviewer")
 		}
 		var review struct{ Context string }
 		if err := json.Unmarshal([]byte(payload.Messages[1].Content), &review); err != nil || review.Context != in.Context {
@@ -55,6 +55,7 @@ func TestModelDataGuardPipeline(t *testing.T) {
 	defer up.Close()
 	e.mu.Lock()
 	e.Settings.Mode = "model"
+	e.Settings.Prompt = strings.Replace(DefaultPrompt, DataGuardAnchor, DataGuardPrompt+"\n\n"+DataGuardAnchor, 1)
 	e.Settings.Model = ModelConfig{BaseURL: up.URL, Model: "fixture", Tested: true}
 	e.mu.Unlock()
 	r, err := e.Submit(in)
@@ -87,8 +88,8 @@ func TestDataGuardDefaultAndSavedOptOut(t *testing.T) {
 	}
 	defer func() { e.Close() }()
 	s := e.Config()
-	if strings.Count(s.Prompt, DataGuardPrompt) != 1 || len(s.Prompt) > 32000 {
-		t.Fatal("new settings must contain one enabled, saveable data guard")
+	if strings.Contains(s.Prompt, DataGuardStart) || len(s.Prompt) > 32000 {
+		t.Fatal("new settings must default to a disabled, saveable data guard")
 	}
 	s.Prompt = strings.Replace(s.Prompt, DataGuardPrompt+"\n\n", "", 1) + "\n保留自定义审查说明。"
 	if err := e.SaveSettings(s, nil); err != nil {
