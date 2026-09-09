@@ -85,6 +85,10 @@ func Open(dir string) (*Engine, error) {
 		return nil, err
 	}
 	e.Settings.Model.HasKey = e.Settings.Model.APIKey != ""
+	if err = e.upgradePrompt(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err = e.put("settings", "current", e.Settings); err != nil {
 		db.Close()
 		return nil, err

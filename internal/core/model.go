@@ -165,7 +165,7 @@ func (e *Engine) modelReview(r Review, s Settings) {
 		}
 	}()
 	var usage *TokenUsage
-	d, err := callModelWithUsage(ctx, s, map[string]any{"hitlMode": "model", "toolName": r.ToolName, "argumentsObj": r.Arguments, "userMessage": r.UserMessage, "context": r.Context, "thinking": "", "reasoningChain": "", "planning": ""}, &usage)
+	d, err := callModelWithUsage(ctx, s, modelInput(r), &usage)
 	if err != nil {
 		d = Decision{Decision: "reject", RuleID: "E_MODEL", Comment: err.Error() + "；本次调用已拒绝，请检查审查模型配置。"}
 	}
@@ -196,8 +196,10 @@ func (e *Engine) TestModel(ctx context.Context) error {
 	e.mu.Lock()
 	s := e.Settings
 	e.mu.Unlock()
+	requestSettings := s
+	requestSettings.Prompt = modelPrompt(s.Prompt)
 	var usage *TokenUsage
-	_, err := callModelWithUsage(ctx, s, map[string]any{"hitlMode": "model", "toolName": "read", "argumentsObj": map[string]any{"path": "README.md"}, "userMessage": "读取项目说明"}, &usage)
+	_, err := callModelWithUsage(ctx, requestSettings, modelInput(Review{ReviewInput: ReviewInput{ToolName: "read", Arguments: map[string]any{"path": "README.md"}, UserMessage: "读取项目说明"}}), &usage)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if usageErr := e.recordUsage(ID(), "", "test", s, usage, err != nil); usageErr != nil {

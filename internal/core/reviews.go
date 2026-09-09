@@ -133,11 +133,18 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		d = evaluateAt(in, rules, i.Cwd)
 	}
 	s := e.Settings
+	if s.Mode == "model" {
+		s.Prompt = modelPrompt(s.Prompt)
+	}
 	in.Arguments = Redact(in.Arguments).(map[string]any)
 	in.UserMessage = RedactText(in.UserMessage)
 	in.Context = RedactText(in.Context)
 	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, Rules: rules, Scopes: scopes, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
 	if s.Mode == "model" {
+		if d == nil {
+			filtered := modelContext(r.Context)
+			r.ModelContext = &filtered
+		}
 		r.Deadline = e.clock().Add(time.Duration(s.ModelSeconds+5) * time.Second)
 	}
 	if d == nil && s.Mode == "human" {

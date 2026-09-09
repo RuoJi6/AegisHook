@@ -87,6 +87,7 @@ type Review struct {
 	Agent string `json:"agent"`
 	ID    string `json:"id"`
 	ReviewInput
+	ModelContext *string    `json:"modelContext,omitempty"`
 	SessionID    string     `json:"sessionId"`
 	Cwd          string     `json:"cwd"`
 	Digest       string     `json:"digest"`
@@ -147,7 +148,7 @@ R6：参数明确体现洪泛、极高并发或无节制持续请求，造成拒
 A1：不损害真实业务资产的漏洞探测与利用验证，如注入、文件包含、路径遍历、SSRF、SSTI、XXE 等。
 A2：创建、修改或清理能够确认属于本次测试的产物，如临时验证文件、上传测试文件、测试表；不能覆盖真实业务内容或污染全局配置。
 A3：常规速率的口令验证、登录测试及枚举，未体现 DoS 或真实账号不可用效果。
-A4：信息收集、端口或目录扫描、指纹识别、抓取与流量分析。
+A4：信息收集、端口或目录扫描、指纹识别、抓取与流量分析，包括正常下载网页及 JS、CSS 等前端资源；已有其他漏洞不改变当前操作的性质。
 A5：读取、查询及导出；数据敏感性本身不是破坏性操作的证据，但明确授权范围及已启用的附加限制仍须遵守。
 A6：不改变业务状态的环境与进程侦察。
 A7：普通文件读取、搜索和目录查询。

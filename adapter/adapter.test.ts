@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { isLoopbackHost, validateDecision } from "./index";
+import { isLoopbackHost, validateDecision, reviewContext } from "./index";
 const root = dirname(fileURLToPath(import.meta.url));
 const piRequire = createRequire(
   join(root, "node_modules/@earendil-works/pi-coding-agent/package.json"),
@@ -20,6 +20,64 @@ const { loadExtensions } = await import(
     ),
   ).href
 );
+
+test("review context excludes denied history and assistant speculation", () => {
+  const message = (value: any) => ({ type: "message", message: value });
+  const call = (id: string) =>
+    message({
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id,
+          name: "bash",
+          arguments: { command: "fixture read" },
+        },
+      ],
+    });
+  const result = (id: string, text: string, isError = false) =>
+    message({
+      role: "toolResult",
+      toolCallId: id,
+      isError,
+      content: [{ type: "text", text }],
+    });
+  const branch = [
+    message({ role: "user", content: "检查测试项目" }),
+    call("ok"),
+    result("ok", "one fixture record"),
+    message({ role: "assistant", content: "plan: download every record" }),
+    call("denied"),
+    result(
+      "denied",
+      "实际操作：读取工单；成功后的后果：批量读取；命中规则：R7",
+      true,
+    ),
+    call("remembered"),
+    result("remembered", "blocked by review"),
+    call("legacy"),
+    result(
+      "legacy",
+      "实际操作：读取工单；成功后的后果：批量读取；命中规则：R7",
+    ),
+    result("unpaired", "cannot tell which command ran"),
+    call("failed"),
+    result("failed", "request failed", true),
+  ];
+  const value = reviewContext(
+    branch,
+    new Map([["remembered", { decision: "reject" }]]),
+  );
+  assert.equal(value.userMessage, "检查测试项目");
+  const history = JSON.parse(value.context);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].toolCallId, "ok");
+  assert.equal(history[0].result, "one fixture record");
+  assert.match(history[0].argumentsPreview, /fixture read/);
+  assert.equal(history[0].status, "succeeded");
+  // Session reload may lose the in-memory verdict map; old rejection text is still excluded.
+  assert.ok(!reviewContext(branch).context.includes("命中规则"));
+});
 
 test("custom loopback endpoints remain local", () => {
   for (const host of [
