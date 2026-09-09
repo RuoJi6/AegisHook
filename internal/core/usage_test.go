@@ -3,9 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -29,13 +30,13 @@ func TestUsageNormalization(t *testing.T) {
 }
 func TestUsageIncludesInvalidVerdictsAndPriceSnapshot(t *testing.T) {
 	e := engine(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"usage":{"prompt_tokens":1000,"completion_tokens":50,"prompt_tokens_details":{"cached_tokens":200}},"choices":[{"message":{"content":"invalid verdict"}}]}`))
-	}))
-	defer srv.Close()
+	transport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = transport })
+	http.DefaultTransport = reviewRoundTrip(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"usage":{"prompt_tokens":1000,"completion_tokens":50,"prompt_tokens_details":{"cached_tokens":200}},"choices":[{"message":{"content":"invalid verdict"}}]}`))}, nil
+	})
 	s := e.Config()
-	s.Model.BaseURL = srv.URL
+	s.Model.BaseURL = "https://fixture.invalid"
 	s.Model.Model = "fixture"
 	s.Model.Pricing = ModelPricing{Enabled: true, Currency: "CNY", Input: 2, Output: 4, CacheRead: 0.5, CacheWrite: 3}
 	if err := e.SaveSettings(s, nil); err != nil {
@@ -48,7 +49,7 @@ func TestUsageIncludesInvalidVerdictsAndPriceSnapshot(t *testing.T) {
 	if err != nil || len(rs) != 1 {
 		t.Fatal(rs, err)
 	}
-	if rs[0].Usage.Input != 800 || rs[0].Cost == nil || math.Abs(*rs[0].Cost-0.0019) > 1e-10 || !rs[0].Failed {
+	if rs[0].Usage == nil || rs[0].Usage.Input != 3200 || rs[0].Cost == nil || math.Abs(*rs[0].Cost-0.0076) > 1e-10 || !rs[0].Failed {
 		t.Fatal(rs[0])
 	}
 	s = e.Config()

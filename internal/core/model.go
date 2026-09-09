@@ -29,29 +29,86 @@ func callModel(ctx context.Context, s Settings, in any) (Decision, error) {
 	return callModelWithUsage(ctx, s, in, &usage)
 }
 func callModelWithUsage(ctx context.Context, s Settings, in any, usage **TokenUsage) (Decision, error) {
+	// All attempts share the original time budget, including configuration tests.
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.ModelSeconds)*time.Second)
+	defer cancel()
+	data, _ := json.Marshal(in)
+	messages := []map[string]string{{"role": "user", "content": string(data)}}
+	total := &TokenUsage{}
+	*usage = nil
+	allUsageKnown := true
+	for attempt := 0; ; attempt++ {
+		if ctx.Err() != nil {
+			return Decision{}, errors.New("模型连接失败或请求超时")
+		}
+		var current *TokenUsage
+		reply, err := callModelText(ctx, s, messages, &current)
+		if current == nil {
+			// A partial total must not be presented as a complete cost estimate.
+			allUsageKnown = false
+			*usage = nil
+		} else {
+			total.Input += current.Input
+			total.Output += current.Output
+			total.CacheRead += current.CacheRead
+			total.CacheWrite += current.CacheWrite
+			if allUsageKnown {
+				*usage = total
+			}
+		}
+		if err != nil {
+			return Decision{}, err
+		}
+		d, err := ParseModelDecision(reply)
+		var formatErr *modelJSONError
+		if !errors.As(err, &formatErr) {
+			return d, err
+		}
+		if attempt == 3 {
+			return Decision{}, fmt.Errorf("%w；JSON 格式纠正已重试 3 次，仍不合格", err)
+		}
+		if strings.TrimSpace(reply) == "" {
+			reply = "（上一条模型响应为空）"
+		}
+		messages = append(messages,
+			map[string]string{"role": "assistant", "content": reply},
+			map[string]string{"role": "user", "content": "上一条裁决的 JSON 格式校验失败：" + formatErr.detail + "。请根据最初的审查输入和原有规则重新输出完整裁决，只修正格式，不因格式反馈改变安全判断。仅输出一个 JSON 对象，且仅包含字符串字段 decision 和 comment，不要 Markdown、解释文字或额外字段。decision 只能为 approve 或 reject；comment 使用“实际操作：...；成功后的后果：...；命中规则：...”结构，规则编号须与结论一致。"},
+		)
+	}
+}
+
+// modelJSONError marks only verdict JSON syntax/shape errors as retryable.
+// Its diagnostic never includes raw model output or arbitrary field names.
+type modelJSONError struct {
+	message string
+	detail  string
+}
+
+func (e *modelJSONError) Error() string { return e.message }
+
+func callModelText(ctx context.Context, s Settings, messages []map[string]string, usage **TokenUsage) (string, error) {
 	if err := ValidateModelURL(s.Model.BaseURL); err != nil {
-		return Decision{}, err
+		return "", err
 	}
 	if s.Model.Model == "" {
-		return Decision{}, errors.New("模型名称为空")
+		return "", errors.New("模型名称为空")
 	}
-	data, _ := json.Marshal(in)
 	endpoint := strings.TrimRight(s.Model.BaseURL, "/")
-	payload := map[string]any{"model": s.Model.Model, "stream": false, "messages": []map[string]string{{"role": "system", "content": s.Prompt}, {"role": "user", "content": string(data)}}}
+	payload := map[string]any{"model": s.Model.Model, "stream": false, "messages": append([]map[string]string{{"role": "system", "content": s.Prompt}}, messages...)}
 	if s.Model.Protocol == "anthropic" {
 		if strings.HasSuffix(endpoint, "/v1") {
 			endpoint += "/messages"
 		} else {
 			endpoint += "/v1/messages"
 		}
-		payload = map[string]any{"model": s.Model.Model, "stream": false, "max_tokens": 2048, "system": s.Prompt, "messages": []map[string]string{{"role": "user", "content": string(data)}}}
+		payload = map[string]any{"model": s.Model.Model, "stream": false, "max_tokens": 2048, "system": s.Prompt, "messages": messages}
 	} else {
 		endpoint += "/chat/completions"
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
-		return Decision{}, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if s.Model.Protocol == "anthropic" {
@@ -66,11 +123,11 @@ func callModelWithUsage(ctx context.Context, s Settings, in any, usage **TokenUs
 	client := &http.Client{Timeout: time.Duration(s.ModelSeconds) * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("模型端点不允许重定向") }}
 	res, err := client.Do(req)
 	if err != nil {
-		return Decision{}, errors.New("模型连接失败或请求超时")
+		return "", errors.New("模型连接失败或请求超时")
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
-		return Decision{}, fmt.Errorf("模型返回 HTTP %d", res.StatusCode)
+		return "", fmt.Errorf("模型返回 HTTP %d", res.StatusCode)
 	}
 	if s.Model.Protocol == "anthropic" {
 		var out struct {
@@ -82,11 +139,11 @@ func callModelWithUsage(ctx context.Context, s Settings, in any, usage **TokenUs
 			StopReason string `json:"stop_reason"`
 		}
 		if err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&out); err != nil {
-			return Decision{}, errors.New("Anthropic 模型响应格式无效")
+			return "", errors.New("Anthropic 模型响应格式无效")
 		}
 		*usage = parseUsage(out.Usage, s.Model.Protocol)
 		if out.StopReason != "end_turn" {
-			return Decision{}, errors.New("Anthropic 模型没有完成文本裁决")
+			return "", errors.New("Anthropic 模型没有完成文本裁决")
 		}
 		texts := []string{}
 		for _, c := range out.Content {
@@ -94,7 +151,7 @@ func callModelWithUsage(ctx context.Context, s Settings, in any, usage **TokenUs
 				texts = append(texts, c.Text)
 			}
 		}
-		return ParseModelDecision(strings.Join(texts, "\n"))
+		return strings.Join(texts, "\n"), nil
 	}
 	var out struct {
 		Usage   json.RawMessage `json:"usage"`
@@ -106,16 +163,16 @@ func callModelWithUsage(ctx context.Context, s Settings, in any, usage **TokenUs
 		} `json:"choices"`
 	}
 	if err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&out); err != nil {
-		return Decision{}, errors.New("模型响应格式无效")
+		return "", errors.New("模型响应格式无效")
 	}
 	*usage = parseUsage(out.Usage, s.Model.Protocol)
 	if len(out.Choices) != 1 {
-		return Decision{}, errors.New("模型响应格式无效")
+		return "", errors.New("模型响应格式无效")
 	}
 	if reason := out.Choices[0].FinishReason; reason != "" && reason != "stop" {
-		return Decision{}, errors.New("模型裁决未完整输出")
+		return "", errors.New("模型裁决未完整输出")
 	}
-	return ParseModelDecision(out.Choices[0].Message.Content)
+	return out.Choices[0].Message.Content, nil
 }
 func ParseModelDecision(text string) (Decision, error) {
 	var fields map[string]json.RawMessage
@@ -131,11 +188,27 @@ func ParseModelDecision(text string) (Decision, error) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&out); err != nil {
-		return Decision{}, errors.New("模型裁决必须为 JSON，且仅包含 decision、comment")
+		detail := "只允许 decision、comment 两个字符串字段，不允许额外字段"
+		var syntaxErr *json.SyntaxError
+		var typeErr *json.UnmarshalTypeError
+		switch {
+		case errors.As(err, &syntaxErr):
+			detail = fmt.Sprintf("JSON 语法错误（字节位置 %d），请检查引号、逗号及对象外的文本或代码围栏", syntaxErr.Offset)
+		case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+			detail = "响应为空或 JSON 不完整，请输出完整的 JSON 对象"
+		case errors.As(err, &typeErr):
+			detail = "JSON 类型错误：顶层必须为对象，decision 和 comment 必须为字符串"
+		}
+		return Decision{}, &modelJSONError{message: "模型裁决必须为 JSON，且仅包含 decision、comment", detail: detail}
 	}
 	var extra any
 	if dec.Decode(&extra) != io.EOF {
-		return Decision{}, errors.New("模型输出包含多余内容")
+		return Decision{}, &modelJSONError{message: "模型输出包含多余内容", detail: "JSON 对象之后包含多余内容，只能输出一个 JSON 对象"}
+	}
+	for _, key := range []string{"decision", "comment"} {
+		if raw, ok := fields[key]; !ok || string(raw) == "null" {
+			return Decision{}, &modelJSONError{message: "模型裁决必须为 JSON，且仅包含 decision、comment", detail: "缺少字符串字段 " + key + "，或该字段为 null"}
+		}
 	}
 	if !hasExact(out.Decision, "approve", "reject") || !strings.Contains(out.Comment, "实际操作：") || !strings.Contains(out.Comment, "成功后的后果：") {
 		return Decision{}, errors.New("模型裁决缺少有效结论或说明")
