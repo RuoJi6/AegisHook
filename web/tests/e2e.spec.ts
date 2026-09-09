@@ -734,7 +734,7 @@ test("full local console workflow and visual states", async ({
   }
 });
 
-test("post-verification data guard defaults on and preserves prompt edits", async ({
+test("post-verification data guard defaults off and preserves prompt edits", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -761,7 +761,9 @@ test("post-verification data guard defaults on and preserves prompt edits", asyn
   ).json();
   const start = template.dataGuardStart as string;
   await expect(toggle).toBeEnabled();
-  await expect(toggle).toBeChecked();
+  await expect(toggle).not.toBeChecked();
+  await expect(editor).toHaveValue(template.prompt);
+  expect(template.prompt).not.toContain(start);
   const help = page.getByRole("button", {
     name: "限制漏洞确认后的批量取数说明",
     exact: true,
@@ -777,6 +779,7 @@ test("post-verification data guard defaults on and preserves prompt edits", asyn
   await expect(tooltip).toBeVisible();
   await help.press("Escape");
   await expect(tooltip).toHaveCount(0);
+  await toggle.check();
   const original = await editor.inputValue();
   expect(original).toContain(template.dataGuardPrompt);
   expect(original.indexOf(start)).toBeLessThan(
@@ -841,10 +844,10 @@ test("post-verification data guard defaults on and preserves prompt edits", asyn
   await toggle.uncheck();
   await expect(editor).toHaveValue(custom);
   await page.getByRole("button", { name: "恢复默认", exact: true }).click();
-  await expect(toggle).toBeChecked();
+  await expect(toggle).not.toBeChecked();
   await expect(editor).toHaveValue(template.prompt);
   await saveAndReload();
-  await expect(toggle).toBeChecked();
+  await expect(toggle).not.toBeChecked();
   await expect(editor).toHaveValue(template.prompt);
   await expect(page.locator("vite-error-overlay")).toHaveCount(0);
   await help.hover();
