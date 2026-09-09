@@ -202,6 +202,7 @@ export const callTitle = (c: Call) =>
     R4: "删除数据或文件",
     R5: "停止业务服务",
     R6: "拒绝服务操作",
+    R7: "漏洞确认后批量取数",
     A7: "读取或查询",
   })[c.ruleId] || c.toolName + " 工具调用";
 

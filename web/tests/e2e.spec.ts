@@ -455,7 +455,9 @@ test("full local console workflow and visual states", async ({
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByLabel("Base URL").fill("http://127.0.0.1:18795/v1");
     await page.getByLabel("模型名称").fill("fixture-reviewer");
-    await page.getByLabel("启用费用估算").check();
+    await page
+      .getByRole("switch", { name: "启用费用估算", exact: true })
+      .check();
     await page.getByLabel("输入单价", { exact: true }).fill("2");
     await page.getByLabel("输出单价", { exact: true }).fill("4");
     await page.getByLabel("缓存读取单价", { exact: true }).fill("0.5");
@@ -724,4 +726,140 @@ test("full local console workflow and visual states", async ({
   } finally {
     clearInterval(beat);
   }
+});
+
+test("post-verification data guard defaults on and preserves prompt edits", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/settings");
+  await page.getByLabel("管理令牌", { exact: true }).fill("browser-test-admin");
+  await page.getByRole("button", { name: "进入控制台" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveTitle(/AegisHook/);
+  await expect(
+    page.getByRole("heading", { name: "模型审查提示词", exact: true }),
+  ).toBeVisible();
+  // The unauthenticated startup probe returns 401 before login by design.
+  // Check console errors for the authenticated settings flow below.
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  const toggle = page.getByRole("switch", {
+    name: /限制漏洞确认后的批量取数/,
+  });
+  const editor = page.getByLabel("提示词内容", { exact: true });
+  const template = await (
+    await page.request.get("/api/v1/settings/default-prompt")
+  ).json();
+  const start = template.dataGuardStart as string;
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toBeChecked();
+  const help = page.getByRole("button", {
+    name: "限制漏洞确认后的批量取数说明",
+    exact: true,
+  });
+  const tooltip = page.getByRole("tooltip");
+  await expect(tooltip).toHaveCount(0);
+  await help.hover();
+  await expect(tooltip).toContainText("结合上下文中的漏洞验证证据");
+  await expect(tooltip).toContainText("保存设置后生效");
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+  await help.focus();
+  await expect(tooltip).toBeVisible();
+  await help.press("Escape");
+  await expect(tooltip).toHaveCount(0);
+  const original = await editor.inputValue();
+  expect(original).toContain(template.dataGuardPrompt);
+  expect(original.indexOf(start)).toBeLessThan(
+    original.indexOf(template.dataGuardAnchor),
+  );
+
+  const customSuffix = "\n自定义要求：裁决说明保持简洁。";
+  await editor.fill(original + customSuffix);
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  const disabled = await editor.inputValue();
+  expect(disabled).not.toContain(start);
+  expect(disabled).toContain(customSuffix);
+  async function saveAndReload() {
+    const response = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/settings") &&
+        response.request().method() === "PUT",
+    );
+    await page.getByRole("button", { name: "保存设置", exact: true }).click();
+    expect((await response).ok()).toBeTruthy();
+    await page.reload();
+    await expect(toggle).toBeEnabled();
+  }
+  const pricingToggle = page.getByRole("switch", {
+    name: "启用费用估算",
+    exact: true,
+  });
+  const originalPricing = await pricingToggle.getAttribute("aria-checked");
+  await pricingToggle.click();
+  await saveAndReload();
+  await expect(pricingToggle).toHaveAttribute(
+    "aria-checked",
+    originalPricing === "true" ? "false" : "true",
+  );
+  await page
+    .getByRole("button", { name: "启用费用估算说明", exact: true })
+    .hover();
+  await expect(tooltip).toContainText("实际账单以服务商为准");
+  await page.mouse.move(0, 0);
+  await pricingToggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect(editor).toHaveValue(disabled);
+  await toggle.check();
+  await expect(editor).toHaveValue(original + customSuffix);
+  await toggle.uncheck();
+  await toggle.check();
+  expect((await editor.inputValue()).split(start)).toHaveLength(2);
+  await saveAndReload();
+  await expect(toggle).toBeChecked();
+  await expect(editor).toHaveValue(original + customSuffix);
+
+  // A custom prompt without the standard section gets a prepended block.
+  const custom =
+    "自定义审查提示词。保留这段文字、换行和输出格式。\n只输出 JSON。";
+  await editor.fill(custom);
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  expect(await editor.inputValue()).toBe(
+    template.dataGuardPrompt + "\n\n" + custom,
+  );
+  await toggle.uncheck();
+  await expect(editor).toHaveValue(custom);
+  await page.getByRole("button", { name: "恢复默认", exact: true }).click();
+  await expect(toggle).toBeChecked();
+  await expect(editor).toHaveValue(template.prompt);
+  await saveAndReload();
+  await expect(toggle).toBeChecked();
+  await expect(editor).toHaveValue(template.prompt);
+  await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+  await help.hover();
+  await expect(tooltip).toBeVisible();
+  await page.screenshot({
+    path: join(tmpdir(), "aegishook-data-guard-desktop.png"),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await help.click();
+  await expect(tooltip).toBeVisible();
+  await expect(toggle).toBeVisible();
+  const tooltipBox = await tooltip.boundingBox();
+  expect(tooltipBox!.x).toBeGreaterThanOrEqual(0);
+  expect(tooltipBox!.x + tooltipBox!.width).toBeLessThanOrEqual(390);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: join(tmpdir(), "aegishook-data-guard-mobile.png"),
+  });
+  expect(errors).toEqual([]);
 });

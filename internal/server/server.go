@@ -125,7 +125,11 @@ func (s *Server) Handler() http.Handler {
 		write(w, v)
 	})
 	mux.HandleFunc("GET /api/v1/settings/default-prompt", func(w http.ResponseWriter, r *http.Request) {
-		write(w, map[string]string{"prompt": core.DefaultPrompt})
+		write(w, map[string]string{
+			"prompt": core.DefaultPrompt, "dataGuardPrompt": core.DataGuardPrompt,
+			"dataGuardStart": core.DataGuardStart, "dataGuardEnd": core.DataGuardEnd,
+			"dataGuardAnchor": core.DataGuardAnchor,
+		})
 	})
 	mux.HandleFunc("PUT /api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

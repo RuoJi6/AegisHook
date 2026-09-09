@@ -142,6 +142,8 @@ gh release create v0.2.0 --target main --title "v0.2.0" --notes-file release-not
 
 模型模式使用独立模型配置，默认 20 秒超时。默认提示词参考 ARTEX 的资产归属与可恢复性判断：R1–R6 拒绝明确损害真实业务资产的操作，A1–A7 允许无破坏的探测与验证，信息不足也由模型直接判断，D1 在未发现明确破坏真实业务资产的行为时默认允许。规则编号沿用 AegisHook 含义，不直接使用 ARTEX 的输出格式。
 
+「限制漏洞确认后的批量取数」在默认提示词中开启。开关在当前提示词中插入或移除带起止标记的 R7 规则块，保存后生效；恢复默认会重新开启，已有自定义提示词不会被自动覆盖。R7 根据可见上下文中的漏洞验证证据，拒绝后续超出最小验证范围的真实业务数据获取，包含分页、遍历 ID 和拆分为多次小请求的累计取数；不按 `--dump` 等命令关键词拦截，也不因已有漏洞而拒绝验证新权限边界的最小必要读取。该限制仅用于进入模型审查的调用，前置允许规则仍可能直接放行。
+
 模型仅返回 JSON 的 `decision`（approve/reject）和 `comment`（实际操作、成功后的后果、规则编号），不支持转人工。未知脚本或信息不足由模型按可见内容及 D1 判断，不据此断言安全。模型调用不能由人工审批接口改判；历史模型转人工记录保留原始裁决用于审计。
 
 传输、超时、响应格式、规则编号错误以及模型改参建议均拒绝，`ask` 也视为无效裁决。上下文与参数是待审查数据，不得改写审查规则；先脱敏，再发送模型和落库，不生成不存在的思考过程。前置规则仍优先执行，模型提示词只处理其未裁决的调用。默认模板变化不会自动覆盖其它安装实例的自定义提示词；可在设置中恢复默认并保存。
@@ -228,3 +230,5 @@ npm run test:e2e
 系统设置中可启用费用估算，并填写当前模型的输入、输出、缓存读取、缓存写入每百万 Token 单价（CNY / USD）。每次请求按当时配置保存单价快照；模型/服务商切换时请同步核对价格。0 表示免费，未启用表示未计价。费用不含税费、套餐、阶梯和汇率换算，缓存写入按统一单价估算，最终以服务商账单为准。发生未知费用的日期在趋势中留空，已计价小计单独显示。
 
 用量来源：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat)、[Anthropic 缓存计量](https://platform.claude.com/docs/zh-CN/build-with-claude/prompt-caching)。
+
+参考：[https://github.com/Ed1s0nZ/CyberStrikeAI](https://github.com/Ed1s0nZ/CyberStrikeAI) [https://github.com/Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX)

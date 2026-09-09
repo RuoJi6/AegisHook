@@ -1,14 +1,52 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api, useConsole } from "../store";
 import type { Settings } from "../types";
 import Icon from "../components/Icon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import SettingSwitch from "../components/SettingSwitch.vue";
+import {
+  hasDataGuard,
+  setDataGuard,
+  type PromptTemplate,
+} from "../prompt-guard";
 const store = useConsole();
+const promptTemplate = ref<PromptTemplate | null>(null);
+const dataGuardEnabled = computed(
+  () =>
+    !!form.value &&
+    !!promptTemplate.value &&
+    hasDataGuard(form.value.prompt, promptTemplate.value),
+);
 const form = ref<Settings | null>(null),
   apiKey = ref(""),
   testing = ref(false),
   dirty = ref(false);
+async function loadPromptTemplate() {
+  try {
+    promptTemplate.value = await api<PromptTemplate>(
+      "/settings/default-prompt",
+    );
+    return promptTemplate.value;
+  } catch (error) {
+    store.error = String(error);
+    return null;
+  }
+}
+onMounted(loadPromptTemplate);
+function toggleDataGuard(enabled: boolean) {
+  if (!form.value || !promptTemplate.value) return;
+  try {
+    form.value.prompt = setDataGuard(
+      form.value.prompt,
+      enabled,
+      promptTemplate.value,
+    );
+    dirty.value = true;
+  } catch (error) {
+    store.error = String(error);
+  }
+}
 watch(
   () => store.settings,
   (s) => {
@@ -42,7 +80,8 @@ async function test() {
     form.value = JSON.parse(JSON.stringify(store.settings));
 }
 async function restore() {
-  const p = await api("/settings/default-prompt");
+  const p = promptTemplate.value || (await loadPromptTemplate());
+  if (!p || !form.value) return;
   form.value!.prompt = p.prompt;
   dirty.value = true;
 }
@@ -158,12 +197,12 @@ async function restore() {
         填写当前模型的每百万 Token
         单价。包含连接测试，按请求时的单价留存；未配置的历史请求不会补算。实际账单以服务商为准。
       </p>
-      <label class="inline"
-        ><input
-          type="checkbox"
-          v-model="form.model.pricing.enabled"
-        />启用费用估算</label
-      >
+      <SettingSwitch
+        v-model="form.model.pricing.enabled"
+        label="启用费用估算"
+        description="开启后，按填写的模型单价估算审查请求费用，包含连接测试。未配置的历史请求不会补算，实际账单以服务商为准。保存设置后生效。"
+        @update:model-value="dirty = true"
+      />
       <div class="pricing-fields">
         <label
           >计价币种<AppSelect
@@ -212,12 +251,19 @@ async function restore() {
       <div class="panel-heading">
         <div>
           <h2>模型审查提示词</h2>
-          <p class="muted">真实资产与可恢复性 · 模型直接裁决 · D1 默认放行</p>
+          <p class="muted">结合上下文审查 · 拒绝规则优先 · 模型直接裁决</p>
         </div>
         <button type="button" @click="restore">
           <Icon name="RotateCcw" :size="16" />恢复默认
         </button>
       </div>
+      <SettingSwitch
+        :model-value="dataGuardEnabled"
+        :disabled="!promptTemplate"
+        label="限制漏洞确认后的批量取数"
+        :description="'结合上下文中的漏洞验证证据，拦截超出最小验证需要的持续取数，包括分页、遍历 ID 和拆分请求；不按 --dump 等命令关键词判断。\n默认提示词已开启。切换会插入或移除对应规则块，保存设置后生效。\n仅作用于进入模型审查的调用，前置允许规则仍可能直接放行。'"
+        @update:model-value="toggleDataGuard"
+      />
       <label
         >提示词内容<textarea
           class="prompt-editor mono"

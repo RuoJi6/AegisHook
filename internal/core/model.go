@@ -140,7 +140,7 @@ func ParseModelDecision(text string) (Decision, error) {
 	if !hasExact(out.Decision, "approve", "reject") || !strings.Contains(out.Comment, "实际操作：") || !strings.Contains(out.Comment, "成功后的后果：") {
 		return Decision{}, errors.New("模型裁决缺少有效结论或说明")
 	}
-	m := regexp.MustCompile(`命中规则[：:]\s*(R[1-6]|A[1-7]|D1)\b`).FindStringSubmatch(out.Comment)
+	m := regexp.MustCompile(`命中规则[：:]\s*(R[1-7]|A[1-7]|D1)\b`).FindStringSubmatch(out.Comment)
 	if len(m) != 2 {
 		return Decision{}, errors.New("模型裁决缺少有效规则编号")
 	}
