@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
 export interface Series {
   key: string;
   label: string;
@@ -78,6 +78,41 @@ const tickEvery = computed(() =>
     Math.ceil(props.points.length / Math.max(3, Math.floor(width.value / 95))),
   ),
 );
+const active = ref(-1);
+const activePoint = computed(() => props.points[active.value]);
+watch(
+  () => props.points.length,
+  () => {
+    active.value = -1;
+  },
+);
+function inspect(event: MouseEvent | PointerEvent) {
+  const box = (event.currentTarget as SVGElement).getBoundingClientRect();
+  const local = ((event.clientX - box.left) / box.width) * width.value;
+  active.value = Math.min(
+    props.points.length - 1,
+    Math.max(0, Math.floor((local - left) / step.value)),
+  );
+}
+function navigate(event: KeyboardEvent) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key))
+    return;
+  event.preventDefault();
+  if (event.key === "Escape") {
+    active.value = -1;
+    return;
+  }
+  if (event.key === "Home") active.value = 0;
+  else if (event.key === "End") active.value = props.points.length - 1;
+  else
+    active.value = Math.min(
+      props.points.length - 1,
+      Math.max(0, active.value + (event.key === "ArrowRight" ? 1 : -1)),
+    );
+}
+const tooltipLeft = computed(() =>
+  Math.max(0, Math.min(x(active.value) - 90, width.value - 200)),
+);
 </script>
 <template>
   <div ref="container" class="trend-chart">
@@ -89,7 +124,17 @@ const tickEvery = computed(() =>
     <svg
       :viewBox="`0 0 ${width} ${height}`"
       role="img"
-      :aria-label="title + '，按日统计；详细数值见下方数据表'"
+      tabindex="0"
+      @mousemove="inspect"
+      @pointerdown="inspect"
+      @mouseleave="active = -1"
+      @focus="active = points.length - 1"
+      @blur="active = -1"
+      @keydown="navigate"
+      :aria-label="
+        title +
+        '，左右方向键切换日期，Home / End 跳到首尾；详细数值见下方数据表'
+      "
     >
       <g v-for="v in [0, 0.5, 1]" :key="v">
         <line
@@ -148,7 +193,38 @@ const tickEvery = computed(() =>
           {{ p.date.slice(5) }}
         </text>
       </template>
+      <line
+        v-if="activePoint"
+        :x1="x(active)"
+        :x2="x(active)"
+        :y1="top"
+        :y2="bottom"
+        stroke="var(--muted)"
+        stroke-dasharray="3 3"
+        pointer-events="none"
+      />
     </svg>
+    <div
+      v-if="activePoint"
+      class="chart-tooltip"
+      role="status"
+      :style="{ left: tooltipLeft + 'px' }"
+    >
+      <strong>{{ activePoint.date }}</strong>
+      <div v-for="s in series" :key="s.key">
+        <span><i :style="{ background: s.color }" />{{ s.label }}</span
+        ><b
+          >{{
+            activePoint[s.key] === null
+              ? "未知"
+              : (activePoint[s.key] as number).toLocaleString("zh-CN", {
+                  maximumFractionDigits: 6,
+                })
+          }}
+          {{ activePoint[s.key] === null ? "" : unit }}</b
+        >
+      </div>
+    </div>
     <details class="chart-data">
       <summary>查看每日数据</summary>
       <div class="chart-table">

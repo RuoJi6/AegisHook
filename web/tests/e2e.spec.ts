@@ -649,6 +649,29 @@ test("full local console workflow and visual states", async ({
     await expect(page.locator(".dashboard")).toContainText(
       "审查模型 Token 消耗",
     );
+    const approvalChart = page.locator(".review-charts .trend-chart").first();
+    const approvalBox = await page.locator(".review-charts").boundingBox(),
+      usageBox = await page.locator(".usage-panel").boundingBox();
+    expect(approvalBox!.y).toBeLessThan(usageBox!.y);
+    const svg = approvalChart.locator("svg");
+    await svg.focus();
+    await svg.press("End");
+    await expect(approvalChart.locator(".chart-tooltip")).toContainText(
+      "14 次",
+    );
+    await svg.press("Home");
+    await expect(approvalChart.locator(".chart-tooltip")).toContainText("0 次");
+    const graphBox = await svg.boundingBox();
+    await svg.hover({ position: { x: graphBox!.width - 18, y: 60 } });
+    await expect(approvalChart.locator(".chart-tooltip")).toContainText(
+      "14 次",
+    );
+    await page
+      .locator(".donut-legend button")
+      .filter({ hasText: "已拦截" })
+      .click();
+    await expect(page.locator(".donut-center")).toContainText("14");
+    await expect(page.locator(".donut-center")).toContainText("50.0%");
     await expect(page.locator(".cost-number")).toHaveText("¥0.0038");
     await expect(page.locator(".usage-summary")).toContainText("2,100");
     await page.getByRole("button", { name: "30 天", exact: true }).click();
@@ -662,16 +685,19 @@ test("full local console workflow and visual states", async ({
     await choose(page, "统计币种", "CNY 人民币");
     await page.locator(".usage-chart summary").click();
     await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({
       path: join(output, "dashboard-1920.png"),
       fullPage: true,
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({
       path: join(output, "dashboard-light.png"),
       fullPage: true,
     });
     await page.getByRole("button", { name: "切换深色主题" }).click();
+    await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({
       path: join(output, "dashboard-dark.png"),
       fullPage: true,
@@ -683,6 +709,7 @@ test("full local console workflow and visual states", async ({
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBeTruthy();
+    await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({
       path: join(output, "dashboard-mobile.png"),
       fullPage: true,

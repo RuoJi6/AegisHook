@@ -22,8 +22,10 @@
 
 有意差异：移除“演示数据”按钮及虚假 Claude 会话；账号创建/删除直接拒绝，待审批采用未被规则覆盖的脚本；不显示无法证实的“Agent 已调整方案”状态。完整路径和结构化参数会让部分记录比效果图更高。
 
-Linux 仅完成交叉编译；真实 Linux Pi 生命周期测试仍需在 Linux 主机上执行。测试没有使用真实账号修改、密码修改或数据删除。
+Linux 的 Pi 生命周期现由 GitHub CI 的真实加载器与隔离工具循环覆盖。测试没有执行真实账号修改、密码修改或数据删除；Windows 实机 Hook 验收仍待完成。
 
 ## 发布前验证
 
 GitHub CI 在 Ubuntu 和 macOS 运行 Go 竞争检测、Pi 真实加载器/工具循环测试、OpenCode 回调测试；Ubuntu 额外运行浏览器端到端流程。云模型测试默认跳过，不使用任何真实密钥。发行版交叉编译覆盖 macOS AMD64/ARM64、Linux AMD64/ARM64 和 Windows AMD64；交叉编译成功不等同于 Windows 实机 Hook 验收。
+
+2026-09-09：GitHub Actions 已完成 Linux / macOS 的 Go race、适配器测试，并在 Linux Chromium 完成浏览器端到端测试。仪表盘增加审查趋势、裁决环形图、Token / 费用统计、悬浮数据、键盘日期导航，覆盖 1440 / 1920 和 390 像素视口。

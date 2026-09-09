@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useConsole, date, callTitle, decisionLabel } from "../store";
 import AppSelect from "./AppSelect.vue";
 import Icon from "./Icon.vue";
+import DecisionDonut from "./DecisionDonut.vue";
 import TrendChart from "./TrendChart.vue";
 import type { Point } from "./TrendChart.vue";
 const store = useConsole(),
@@ -167,9 +168,7 @@ const recent = computed(() =>
         ><strong>{{ fmt(calls.length) }}</strong
         ><small
           >近 {{ days }} 天 ·
-          {{
-            calls.filter((c) => c.execution === "succeeded").length
-          }}
+          {{ calls.filter((c) => c.execution === "succeeded").length }}
           次执行成功</small
         >
       </article>
@@ -207,6 +206,31 @@ const recent = computed(() =>
           <router-link to="/settings">配置单价</router-link></small
         >
       </article>
+    </div>
+    <div class="dashboard-charts review-charts">
+      <section class="panel">
+        <div class="panel-heading">
+          <strong><Icon name="Activity" />工具审批趋势</strong
+          ><span class="muted tiny">按提交日期 · 当前裁决</span>
+        </div>
+        <TrendChart
+          title="工具审批趋势"
+          :points="points"
+          :series="[
+            { key: 'approve', label: '允许', color: '#20b486' },
+            { key: 'reject', label: '拦截', color: '#f05265' },
+            { key: 'pending', label: '待审查', color: '#e6a236' },
+          ]"
+          unit="次"
+        />
+      </section>
+      <section class="panel decision-panel">
+        <div class="panel-heading">
+          <strong><Icon name="ShieldCheck" />裁决分布</strong
+          ><span class="muted tiny">近 {{ days }} 天 · 数量与占比</span>
+        </div>
+        <DecisionDonut :calls="calls" />
+      </section>
     </div>
     <section class="panel usage-panel">
       <div class="panel-heading">
@@ -260,50 +284,30 @@ const recent = computed(() =>
         费用计算。用量统计从本次升级后开始。
       </div>
     </section>
-    <div class="dashboard-charts">
-      <section class="panel">
-        <div class="panel-heading">
-          <strong><Icon name="Activity" />工具审查趋势</strong
-          ><span class="muted tiny">按提交日期 · 当前裁决</span>
-        </div>
-        <TrendChart
-          title="工具审查趋势"
-          :points="points"
-          :series="[
-            { key: 'approve', label: '允许', color: '#20b486' },
-            { key: 'reject', label: '拦截', color: '#f05265' },
-            { key: 'pending', label: '待审查', color: '#e6a236' },
+    <section class="panel">
+      <div class="panel-heading">
+        <strong><Icon name="Activity" />费用趋势</strong
+        ><AppSelect
+          v-model="currency"
+          label="统计币种"
+          :options="[
+            { value: 'CNY', label: 'CNY 人民币' },
+            { value: 'USD', label: 'USD 美元' },
           ]"
-          unit="次"
         />
-      </section>
-      <section class="panel">
-        <div class="panel-heading">
-          <strong><Icon name="Activity" />费用趋势</strong
-          ><AppSelect
-            v-model="currency"
-            label="统计币种"
-            :options="[
-              { value: 'CNY', label: 'CNY 人民币' },
-              { value: 'USD', label: 'USD 美元' },
-            ]"
-          />
-        </div>
-        <TrendChart
-          title="费用趋势"
-          :points="points"
-          :series="[{ key: 'cost', label: '已计价费用', color: '#8b5cf6' }]"
-          kind="line"
-          :unit="currency"
-        />
-        <div class="dashboard-footnote">
-          {{
-            records.filter((r) => r.cost === null).length
-          }}
-          次未计价；存在未知费用的日期留空。币种分别统计，不作汇率换算。
-        </div>
-      </section>
-    </div>
+      </div>
+      <TrendChart
+        title="费用趋势"
+        :points="points"
+        :series="[{ key: 'cost', label: '已计价费用', color: '#8b5cf6' }]"
+        kind="line"
+        :unit="currency"
+      />
+      <div class="dashboard-footnote">
+        {{ records.filter((r) => r.cost === null).length }}
+        次未计价；存在未知费用的日期留空。币种分别统计，不作汇率换算。
+      </div>
+    </section>
     <section class="panel recent-blocks">
       <div class="panel-heading">
         <strong><Icon name="ShieldAlert" />近期拦截</strong

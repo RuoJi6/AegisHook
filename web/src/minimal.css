@@ -1170,3 +1170,143 @@ input[type="checkbox"] {
     display: none;
   }
 }
+.trend-chart {
+  position: relative;
+}
+.trend-chart > svg {
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.chart-tooltip {
+  position: absolute;
+  top: 55px;
+  z-index: 3;
+  min-width: 190px;
+  max-width: calc(100% - 8px);
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  border-radius: 9px;
+  font-size: 11px;
+  pointer-events: none;
+}
+.chart-tooltip > strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.chart-tooltip > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 7px 0;
+}
+.chart-tooltip span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.chart-tooltip i,
+.donut-legend i {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 50%;
+}
+.review-charts {
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+}
+.decision-donut {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.donut-graphic {
+  position: relative;
+  width: 180px;
+  height: 180px;
+}
+.donut-graphic svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.donut-graphic circle[role="button"] {
+  cursor: pointer;
+  outline: none;
+}
+.donut-graphic circle[role="button"]:focus-visible {
+  filter: drop-shadow(0 0 2px var(--text));
+}
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+}
+.donut-center strong {
+  font-size: 30px;
+  line-height: 1.15;
+}
+.donut-center span,
+.donut-center small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.donut-legend {
+  width: 100%;
+  max-width: 350px;
+}
+.donut-legend button {
+  display: grid;
+  grid-template-columns: 1fr 40px 55px;
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 9px 10px;
+  font-size: 12px;
+  gap: 12px;
+}
+.donut-legend button.active {
+  background: var(--soft);
+}
+.donut-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.donut-legend b,
+.donut-legend small {
+  text-align: right;
+}
+.donut-legend small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.review-charts > .panel:first-child {
+  display: flex;
+  flex-direction: column;
+}
+.review-charts > .panel:first-child .trend-chart {
+  margin: auto 0;
+}
+@media (max-width: 760px) {
+  .review-charts {
+    grid-template-columns: 1fr;
+  }
+  .decision-donut {
+    padding: 16px;
+  }
+  .chart-tooltip {
+    min-width: 175px;
+  }
+}
