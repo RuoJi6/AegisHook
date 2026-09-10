@@ -30,7 +30,7 @@ func input(call, tool string, args map[string]any) ReviewInput {
 }
 func TestHardRulesAndNoExecution(t *testing.T) {
 	e := engine(t)
-	cases := []struct{ cmd, rule string }{{"passwd alice", "R1"}, {"sudo userdel alice", "R3"}, {"systemctl restart nginx", "R5"}, {"echo x > /etc/nginx/nginx.conf", "R2"}, {"mysql -e 'DROP TABLE users'", "R4"}, {"hping3 --flood example.test", "R6"}}
+	cases := []struct{ cmd, rule string }{{"passwd alice", "R1"}, {"sudo userdel alice", "R3"}, {"systemctl restart nginx", "R5"}, {"echo x > /etc/nginx/nginx.conf", "R2"}, {"mysql -e 'DROP TABLE users'", "R_DB_DROP"}, {"hping3 --flood example.test", "R6"}}
 	for _, c := range cases {
 		r, err := e.Submit(input(ID(), "bash", map[string]any{"command": c.cmd}))
 		if err != nil || r.Decision != "reject" || r.RuleID != c.rule || r.Execution != "not_executed" {

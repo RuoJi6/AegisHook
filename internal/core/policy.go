@@ -62,6 +62,9 @@ func BuiltinRules() []Rule {
 		out = append(out, Rule{ID: fmt.Sprintf("R%d", i+1), Name: n, Decision: "reject", Enabled: true, Builtin: true, Matcher: "semantic", Target: "arguments"})
 	}
 	out = append(out, Rule{ID: "A7", Name: "读取与查询工具", Decision: "approve", Enabled: true, Builtin: true, Matcher: "semantic", Target: "arguments"})
+	for _, preset := range detailedRuleCatalog {
+		out = append(out, Rule{ID: preset.id, Name: preset.name, Decision: "reject", Enabled: !preset.optIn, Builtin: true, Matcher: "semantic", Target: "arguments", Priority: preset.priority})
+	}
 	for i := range out {
 		out[i] = normalizeRule(out[i])
 	}
@@ -266,6 +269,9 @@ func evaluateAt(in ReviewInput, rules []Rule, cwd string) *Decision {
 func evaluatePaths(in ReviewInput, rules []Rule, cwd string, resolve func(string, string) string) *Decision {
 	// Collect every semantic hit: disabling one rule must not hide another operation.
 	hits := builtinMatchesPaths(in, cwd, resolve)
+	for id, what := range detailedBuiltinMatches(in, cwd, resolve) {
+		hits[id] = what
+	}
 	ordered := append([]Rule(nil), rules...)
 	sortRules(ordered)
 	for _, saved := range ordered {

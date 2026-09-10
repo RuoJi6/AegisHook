@@ -266,6 +266,22 @@ test("full local console workflow and visual states", async ({
     await page.getByRole("link", { name: "导出记录" }).click();
     expect((await download).suggestedFilename()).toBe("aegishook-calls.json");
     await page.getByRole("link", { name: "策略规则", exact: true }).click();
+    await expect(page.locator("[data-rule-id]")).toHaveCount(26);
+    await expect(
+      page.getByRole("combobox", { name: "策略规则每页条数" }),
+    ).toContainText("50 条 / 页");
+    await page.getByRole("textbox", { name: "搜索规则" }).fill("redis");
+    await expect(page.locator("[data-rule-id]")).toHaveCount(1);
+    await expect(page.locator('[data-rule-id="R_DB_REDIS"]')).toContainText(
+      "FLUSHDB",
+    );
+    await page.getByRole("textbox", { name: "搜索规则" }).fill("");
+    await choose(page, "规则状态", "已停用");
+    await expect(page.locator("[data-rule-id]")).toHaveCount(1);
+    await expect(
+      page.locator('[data-rule-id="R_NET_PIPE"]').getByRole("switch"),
+    ).toHaveAttribute("aria-checked", "false");
+    await choose(page, "规则状态", "全部状态");
     await page.getByRole("button", { name: "新建规则" }).click();
     await page.getByLabel("名称", { exact: true }).fill("测试只读探测");
     await page.getByLabel("工具名", { exact: true }).fill("bash");
@@ -277,12 +293,9 @@ test("full local console workflow and visual states", async ({
     await page.getByRole("button", { name: "运行试判" }).click();
     await expect(page.locator(".form-panel .notice")).toContainText("approve");
     // Built-in edits must affect the actual reviewer, not only the table.
-    const builtinRow = () =>
-      page
-        .locator("tr")
-        .filter({ has: page.locator(".mono", { hasText: /^R1$/ }) });
+    const builtinRow = () => page.locator('[data-rule-id="R1"]');
     await builtinRow()
-      .getByRole("button", { name: "查看语义", exact: true })
+      .getByRole("button", { name: /^查看 .* 的完整条件$/ })
       .click();
     await expect(page.locator(".rule-semantics")).toContainText(
       "passwd、chpasswd",
@@ -295,10 +308,10 @@ test("full local console workflow and visual states", async ({
       fullPage: true,
     });
     await builtinRow()
-      .getByRole("button", { name: "收起语义", exact: true })
+      .getByRole("button", { name: /^收起 .* 的完整条件$/ })
       .click();
     await builtinRow()
-      .getByRole("button", { name: "编辑", exact: true })
+      .getByRole("button", { name: /^编辑 / })
       .click();
     await expect(
       page.getByRole("heading", { name: "编辑内置规则" }),
@@ -352,7 +365,7 @@ test("full local console workflow and visual states", async ({
     await expect(page.locator(".modal")).toHaveCount(0);
     await page.reload();
     await expect(builtinRow()).toContainText("密码操作测试规则");
-    await expect(builtinRow()).toContainText("直接允许");
+    await expect(builtinRow().locator(".badge")).toHaveText("允许");
     await page
       .getByLabel("参数 JSON")
       .fill(JSON.stringify({ command: "passwd isolated-fixture" }));
@@ -361,16 +374,15 @@ test("full local console workflow and visual states", async ({
     await expect(page.locator(".form-panel .notice")).toContainText(
       "隔离环境测试许可",
     );
-    await builtinRow()
-      .getByRole("button", { name: "已启用", exact: true })
-      .click();
-    await expect(
-      builtinRow().getByRole("button", { name: "未启用" }),
-    ).toBeVisible();
+    await builtinRow().getByRole("switch").click();
+    await expect(builtinRow().getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
     await page.getByRole("button", { name: "运行试判" }).click();
     await expect(page.locator(".form-panel .notice")).toContainText("pending");
     await builtinRow()
-      .getByRole("button", { name: "编辑", exact: true })
+      .getByRole("button", { name: /^编辑 / })
       .click();
     await page.getByRole("button", { name: "恢复默认", exact: true }).click();
     await expect(page.getByLabel("名称", { exact: true })).toHaveValue(
@@ -379,20 +391,25 @@ test("full local console workflow and visual states", async ({
     await page.getByRole("button", { name: "取消", exact: true }).click();
     await expect(builtinRow()).toContainText("密码操作测试规则");
     await builtinRow()
-      .getByRole("button", { name: "编辑", exact: true })
+      .getByRole("button", { name: /^编辑 / })
       .click();
     await choose(page, "匹配方式", "包含文本");
     await choose(page, "匹配对象", "工具名称");
     await page.getByLabel("匹配文本（区分大小写）").fill("fixture");
     await choose(page, "裁决", "拒绝");
-    await page.getByLabel("启用规则", { exact: true }).check();
+    await expect(
+      page.getByRole("switch", { name: "启用当前规则", exact: true }),
+    ).toHaveAttribute("aria-checked", "false");
+    await page
+      .getByRole("switch", { name: "启用当前规则", exact: true })
+      .click();
     await page.getByRole("button", { name: "保存规则", exact: true }).click();
     await expect(page.locator(".modal")).toHaveCount(0);
     await page.getByLabel("工具名称", { exact: true }).fill("fixture_tool");
     await page.getByRole("button", { name: "运行试判" }).click();
     await expect(page.locator(".form-panel .notice")).toContainText("reject");
     await builtinRow()
-      .getByRole("button", { name: "编辑", exact: true })
+      .getByRole("button", { name: /^编辑 / })
       .click();
     await page.getByRole("button", { name: "恢复默认", exact: true }).click();
     await expect(
@@ -586,7 +603,9 @@ test("full local console workflow and visual states", async ({
     await page.getByRole("button", { name: "卸载", exact: true }).click();
     await page.getByRole("button", { name: "移除入口" }).click();
     await expect(page.locator("table").first()).toContainText("已卸载");
-    await expect(page.locator("table").first()).toContainText("已有会话仍需重载");
+    await expect(page.locator("table").first()).toContainText(
+      "已有会话仍需重载",
+    );
     await expect(page.locator("table").first()).toContainText("已收到过事件");
     await request.post(base + "/api/v1/instances/browser-fixture/shutdown", {
       headers: hook,
@@ -876,7 +895,9 @@ test("post-verification data guard defaults off and preserves prompt edits", asy
   expect(errors).toEqual([]);
 });
 
-test("multiple agents retain distinct sources, lifecycle labels and timelines", async ({ page }) => {
+test("multiple agents retain distinct sources, lifecycle labels and timelines", async ({
+  page,
+}) => {
   const { checkMultiAgentDisplay } = await import("./multi-agent-checks");
   await checkMultiAgentDisplay(page);
 });

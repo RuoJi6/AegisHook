@@ -16,7 +16,8 @@ import Icon from "../components/Icon.vue";
 import AppSelect from "../components/AppSelect.vue";
 import RuleSemantics from "../components/RuleSemantics.vue";
 import RemoteClients from "../components/RemoteClients.vue";
-const semanticExpanded = ref("");
+import RulesTable from "../components/RulesTable.vue";
+import RuleSwitch from "../components/RuleSwitch.vue";
 const semanticDefaults = ref<Rule[]>([]);
 const formSemantics = computed(
   () =>
@@ -190,7 +191,6 @@ const auditRows = computed(() =>
 );
 const installationPage = usePagination(() => store.installations, [kind]);
 const instancePage = usePagination(() => store.sortedInstances, [kind]);
-const rulePage = usePagination(() => store.rules, [kind]);
 const scopePage = usePagination(() => store.scopes, [kind]);
 const auditPage = usePagination(() => auditRows.value, [kind, filter]);
 </script>
@@ -410,119 +410,11 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
       秒内收到事件或审查心跳，不代表持续在线。安装范围的接入验证保留历史证据，会话结束、失联或服务重启不会清除。
     </p></template
   >
-  <template v-if="kind === 'rules'"
-    ><section class="panel">
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>规则</th>
-              <th>裁决</th>
-              <th>匹配条件</th>
-              <th>优先级</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="r in rulePage.rows" :key="r.id"
-              ><tr>
-                <td>
-                  <strong>{{ r.name }}</strong
-                  ><small
-                    ><span class="mono">{{ r.id }}</span> ·
-                    {{ r.builtin ? "内置" : "自定义" }}</small
-                  >
-                </td>
-                <td>
-                  <span class="badge" :class="r.decision">{{
-                    r.decision === "reject" ? "直接拒绝" : "直接允许"
-                  }}</span>
-                </td>
-                <td>
-                  <div v-if="r.matcher === 'semantic'" class="semantic-summary">
-                    <span>{{ r.semantics?.summary || "内置检测" }}</span>
-                    <button
-                      class="text-button"
-                      :aria-expanded="semanticExpanded === r.id"
-                      @click="
-                        semanticExpanded = semanticExpanded === r.id ? '' : r.id
-                      "
-                    >
-                      {{ semanticExpanded === r.id ? "收起语义" : "查看语义" }}
-                    </button>
-                  </div>
-                  <template v-else
-                    ><code
-                      >{{ r.tool || "全部工具" }} ·
-                      {{
-                        r.target === "toolName"
-                          ? "工具名称"
-                          : r.field || "完整参数"
-                      }}</code
-                    ><small
-                      >{{ r.matcher === "contains" ? "包含文本" : "正则" }}：{{
-                        r.pattern
-                      }}</small
-                    ></template
-                  >
-                </td>
-                <td class="mono">{{ r.priority }}</td>
-                <td>
-                  <button
-                    class="text-button"
-                    @click="
-                      store.action(
-                        () =>
-                          api('/rules', 'POST', { ...r, enabled: !r.enabled }),
-                        r.enabled ? '规则已停用' : '规则已启用',
-                      )
-                    "
-                  >
-                    {{ r.enabled ? "已启用" : "未启用" }}
-                  </button>
-                </td>
-                <td>
-                  <div class="actions">
-                    <button
-                      class="text-button"
-                      @click="ruleForm = JSON.parse(JSON.stringify(r))"
-                    >
-                      编辑</button
-                    ><button
-                      v-if="!r.builtin"
-                      class="text-button reject"
-                      @click="
-                        store.action(
-                          () => api('/rules/' + r.id, 'DELETE'),
-                          '规则已删除',
-                        )
-                      "
-                    >
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr
-                v-if="semanticExpanded === r.id && r.semantics"
-                class="expanded-row"
-              >
-                <td colspan="6">
-                  <RuleSemantics :semantics="r.semantics" :tool="r.tool" />
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-      <Pagination
-        v-model:page="rulePage.page"
-        v-model:page-size="rulePage.pageSize"
-        :total="rulePage.total"
-        label="策略规则"
-      />
-    </section>
+  <template v-if="kind === 'rules'">
+    <RulesTable
+      :rules="store.rules"
+      @edit="ruleForm = JSON.parse(JSON.stringify($event))"
+    />
     <section class="panel form-panel section-gap">
       <h2>规则试判</h2>
       <p class="muted">只检查确定性规则，不执行工具，也不调用模型。</p>
@@ -803,9 +695,11 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
           placeholder="匹配时返回 Agent 的说明，可留空"
         />
       </label>
-      <label class="inline"
-        ><input type="checkbox" v-model="ruleForm.enabled" />启用规则</label
-      >
+      <div class="inline">
+        <RuleSwitch v-model="ruleForm.enabled" label="启用当前规则" /><span
+          >启用规则</span
+        >
+      </div>
       <div class="actions end">
         <button v-if="ruleForm.builtin" type="button" @click="restoreRule">
           恢复默认

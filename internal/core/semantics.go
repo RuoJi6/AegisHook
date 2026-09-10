@@ -17,6 +17,11 @@ func shellExample(command string) SemanticExample {
 	return SemanticExample{Tool: "bash", Arguments: map[string]any{"command": command}}
 }
 func builtinSemantics(id string) *RuleSemantics {
+	for _, preset := range detailedRuleCatalog {
+		if preset.id == id {
+			return &RuleSemantics{Summary: preset.summary, Checks: preset.checks, Examples: []SemanticExample{shellExample(preset.example)}, Limits: preset.limits}
+		}
+	}
 	switch id {
 	case "R1":
 		return &RuleSemantics{

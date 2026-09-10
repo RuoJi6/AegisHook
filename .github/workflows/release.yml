@@ -81,7 +81,7 @@ jobs:
           cp LICENSE README.md "release/$name/"
           mkdir -p "release/$name/scripts" "release/$name/docs"
           cp scripts/hook.sh scripts/hook.ps1 "release/$name/scripts/"
-          cp docs/remote-clients.md "release/$name/docs/"
+          cp docs/remote-clients.md docs/rules.md "release/$name/docs/"
           if [[ -d assets ]]; then cp -R assets "release/$name/"; fi
           node scripts/write-notices.mjs "release/$name/THIRD_PARTY_NOTICES.md"
           if [[ "$GOOS" = windows ]]; then

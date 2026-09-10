@@ -7,6 +7,8 @@ func TestSemanticDescriptionsAndExamples(t *testing.T) {
 		if r.Semantics == nil || len(r.Semantics.Checks) == 0 || r.Semantics.Limits == "" || len(r.Semantics.Examples) == 0 {
 			t.Fatalf("missing description: %s", r.ID)
 		}
+		// Optional presets also need a working matcher when enabled.
+		r.Enabled = true
 		for _, example := range r.Semantics.Examples {
 			d := Evaluate(ReviewInput{ToolName: example.Tool, Arguments: example.Arguments}, []Rule{r})
 			if d == nil || d.RuleID != r.ID || d.Decision != r.Decision {

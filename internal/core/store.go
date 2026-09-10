@@ -103,6 +103,9 @@ func Open(dir string) (*Engine, error) {
 				return nil, err
 			}
 		}
+	} else if err = e.upgradeBuiltinRules(rules); err != nil {
+		db.Close()
+		return nil, err
 	}
 	reviews, err := e.Reviews()
 	if err != nil {
