@@ -11,6 +11,8 @@ export interface Call {
   cwd: string;
   digest: string;
   mode: string;
+  reviewPath?: "scope" | "rule" | "human" | "model";
+  rules?: Rule[];
   needsHuman?: boolean;
   modelVerdict?: { decision: string; comment: string; ruleId: string };
   version: number;

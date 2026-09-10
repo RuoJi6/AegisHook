@@ -417,7 +417,11 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
     />
     <section class="panel form-panel section-gap">
       <h2>规则试判</h2>
-      <p class="muted">只检查确定性规则，不执行工具，也不调用模型。</p>
+      <p class="muted">
+        只检查确定性规则，不执行工具，也不调用模型。请使用调用记录中的实际工具名称和参数；限定工具名区分大小写（如
+        Bash 与 bash），参数路径须与该 Agent
+        上报的字段一致。试判不包含项目授权范围检查。
+      </p>
       <div class="form-two">
         <label>工具名称<input v-model="testTool" /></label
         ><label

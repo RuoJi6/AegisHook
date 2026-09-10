@@ -8,6 +8,8 @@ import {
   decisionLabel,
   callTitle,
   agentName,
+  reviewPathLabel,
+  matchedRuleName,
 } from "../store";
 import type { Call } from "../types";
 import { usePagination } from "../pagination";
@@ -117,9 +119,10 @@ async function decide(c: Call, d: string) {
               </td>
               <td class="source-cell">
                 <strong>{{ agentName(c.agent) }}</strong
-                ><small :title="c.cwd">项目：{{
-                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
-                }}</small
+                ><small :title="c.cwd"
+                  >项目：{{
+                    c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
+                  }}</small
                 ><small :title="c.sessionId">{{
                   c.sessionId.slice(0, 12)
                 }}</small>
@@ -247,30 +250,21 @@ async function decide(c: Call, d: string) {
               </td>
               <td class="source-cell">
                 <strong>{{ agentName(c.agent) }}</strong
-                ><small :title="c.cwd">项目：{{
-                  c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
-                }}</small
+                ><small :title="c.cwd"
+                  >项目：{{
+                    c.cwd.split(/[\\/]/).filter(Boolean).pop() || "未提供"
+                  }}</small
                 ><small :title="c.sessionId">{{
                   c.sessionId.slice(0, 12)
                 }}</small>
               </td>
               <td class="reason-cell">
-                <span
-                  v-if="
-                    c.mode === 'model' &&
-                    c.ruleId !== 'HUMAN' &&
-                    (c.modelVerdict ||
-                      c.ruleId === 'D1' ||
-                      c.ruleId === 'E_MODEL' ||
-                      !c.ruleId)
-                  "
-                  class="badge model"
+                <span v-if="c.reviewPath === 'model'" class="badge model"
                   ><Icon name="Bot" :size="12" />{{ "模型判定" }}</span
                 ><strong v-else>{{
-                  store.rules.find((r) => r.id === c.ruleId)?.name ||
-                  (c.ruleId === "HUMAN" ? "人工审批" : c.ruleId) ||
-                  "规则未定"
+                  matchedRuleName(c) || reviewPathLabel(c)
                 }}</strong
+                ><small v-if="c.reviewPath === 'rule'">规则直接裁决</small
                 ><small :title="c.comment">{{
                   c.comment ||
                   (c.mode === "model" ? "模型审查中" : "等待人工决策")

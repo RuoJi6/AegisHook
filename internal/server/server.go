@@ -607,7 +607,7 @@ func hookAllowed(r *http.Request) bool {
 	return (r.Method == "POST" && (p == "/api/v1/instances" || p == "/api/v1/reviews" || strings.HasPrefix(p, "/api/v1/instances/") || strings.HasPrefix(p, "/api/v1/reviews/"))) || (r.Method == "GET" && strings.HasPrefix(p, "/api/v1/reviews/"))
 }
 func hookView(r core.Review) map[string]any {
-	return map[string]any{"id": r.ID, "decision": r.Decision, "comment": r.Comment, "ruleId": r.RuleID, "deadline": r.Deadline, "execution": r.Execution}
+	return map[string]any{"id": r.ID, "decision": r.Decision, "comment": r.Comment, "ruleId": r.RuleID, "reviewPath": r.ReviewPath, "deadline": r.Deadline, "execution": r.Execution}
 }
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	f, ok := w.(http.Flusher)

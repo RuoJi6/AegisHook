@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Call } from "../types";
-import { executionLabel, agentName } from "../store";
+import {
+  executionLabel,
+  agentName,
+  reviewPathLabel,
+  matchedRuleName,
+} from "../store";
 import Icon from "./Icon.vue";
 const props = defineProps<{ call: Call }>();
 const more = ref(false);
@@ -71,10 +76,13 @@ const command = computed(() => {
         }}
       </p>
       <span class="muted"
-        >{{ call.mode === "human" ? "人工审查" : "模型审查" }} · 配置版本 v{{
-          call.version
-        }}
-        · {{ call.ruleId || "规则未定" }}</span
+        >{{ reviewPathLabel(call) }} · 配置版本 v{{ call.version }}
+        <template v-if="call.ruleId">
+          · {{ call.ruleId
+          }}<template v-if="matchedRuleName(call)"
+            >（{{ matchedRuleName(call) }}）</template
+          ></template
+        ></span
       >
     </div>
   </div>

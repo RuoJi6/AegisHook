@@ -241,7 +241,13 @@ func (e *Engine) change(kind, id string, v any, action, detail string) error {
 func (e *Engine) commitReview(r Review, action string) error {
 	return e.change("reviews", r.ID, r, action, r.Comment)
 }
-func (e *Engine) Reviews() ([]Review, error) { return list[Review](e, "reviews") }
+func (e *Engine) Reviews() ([]Review, error) {
+	reviews, err := list[Review](e, "reviews")
+	for i := range reviews {
+		reviews[i] = normalizeReviewPath(reviews[i])
+	}
+	return reviews, err
+}
 func (e *Engine) Rules() ([]Rule, error) {
 	rules, err := list[Rule](e, "rules")
 	for i := range rules {
@@ -255,7 +261,7 @@ func (e *Engine) Audits() ([]Audit, error) { return list[Audit](e, "audit") }
 func (e *Engine) Review(id string) (Review, error) {
 	var r Review
 	err := e.get("reviews", id, &r)
-	return r, err
+	return normalizeReviewPath(r), err
 }
 func (e *Engine) Instances() ([]Instance, error) {
 	is, err := list[Instance](e, "instances")

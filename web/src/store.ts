@@ -233,6 +233,19 @@ export const date = (s: string | null) =>
     : "—";
 export const decisionLabel = (s: string) =>
   ({ approve: "已允许", reject: "已拒绝", pending: "待审批" })[s] || s;
+export const reviewPathLabel = (c: Call) =>
+  c.reviewPath
+    ? {
+        scope: "授权范围拦截",
+        rule: "规则直接裁决",
+        human: "规则未命中 → 人工审批",
+        model: "规则未命中 → 模型审查",
+      }[c.reviewPath]
+    : "审查路径未记录";
+export const matchedRuleName = (c: Call) =>
+  c.reviewPath === "rule"
+    ? c.rules?.find((r) => r.id === c.ruleId)?.name || c.ruleId
+    : "";
 export const executionLabel = (s: string) =>
   ({
     not_executed: "未执行",

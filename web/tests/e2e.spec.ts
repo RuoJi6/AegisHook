@@ -202,6 +202,10 @@ test("full local console workflow and visual states", async ({
       .getByRole("button", { name: "查看详情" })
       .click();
     await expect(page.locator(".call-detail")).toContainText("未执行");
+    await expect(page.locator(".call-detail")).toContainText("规则直接裁决");
+    await expect(page.locator(".call-detail")).not.toContainText(
+      "规则未命中 → 人工审批",
+    );
     await expect(page.locator(".toast")).toHaveCount(0);
     await page.screenshot({
       path: join(output, "light-1440.png"),

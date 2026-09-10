@@ -140,7 +140,7 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		if existing.Digest != hex.EncodeToString(digest[:]) {
 			return Review{}, errors.New("工具调用标识已被不同参数使用")
 		}
-		return existing, nil
+		return normalizeReviewPath(existing), nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Review{}, err
 	}
@@ -163,29 +163,21 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		resolve = func(p, cwd string) string { return agentPath(p, cwd, i.Platform) }
 		contains = func(root, p string) bool { return agentWithin(root, p, i.Platform) }
 	}
+	// Every adapter shares this boundary. Resolve deterministic policy against
+	// the original arguments before redaction or either fallback reviewer.
+	path := "scope"
 	d := checkScopePaths(in, i.Cwd, applicable, resolve, contains)
 	if d == nil {
+		path = "rule"
 		d = evaluatePaths(in, rules, i.Cwd, resolve)
 	}
 	s := e.Settings
-	if s.Mode == "model" {
-		s.Prompt = modelPrompt(s.Prompt)
-	}
 	in.Arguments = Redact(in.Arguments).(map[string]any)
 	in.UserMessage = RedactText(in.UserMessage)
 	in.Context = RedactText(in.Context)
 	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, Rules: rules, Scopes: applicable, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
-	if s.Mode == "model" {
-		if d == nil {
-			filtered := modelContext(r.Context)
-			r.ModelContext = &filtered
-		}
-		r.Deadline = e.clock().Add(time.Duration(s.ModelSeconds+5) * time.Second)
-	}
-	if d == nil && s.Mode == "human" {
-		r.NeedsHuman = true
-	}
 	if d != nil {
+		r.ReviewPath = path
 		r.Decision = d.Decision
 		r.RuleID = d.RuleID
 		r.Comment = RedactText(d.Comment)
@@ -194,14 +186,50 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		if d.Decision == "approve" {
 			r.Execution = "awaiting_execution"
 		}
+		// A rule hit is terminal: no human queue, model request or model usage.
+		return r, e.commitReview(r, "review.submit")
+	}
+	r.ReviewPath = s.Mode
+	r.NeedsHuman = s.Mode == "human"
+	if s.Mode == "model" {
+		s.Prompt = modelPrompt(s.Prompt)
+		r.Prompt = s.Prompt
+		filtered := modelContext(r.Context)
+		r.ModelContext = &filtered
+		r.Deadline = e.clock().Add(time.Duration(s.ModelSeconds+5) * time.Second)
 	}
 	if err = e.commitReview(r, "review.submit"); err != nil {
 		return Review{}, err
 	}
-	if d == nil && s.Mode == "model" {
+	if r.ReviewPath == "model" {
 		go e.modelReview(r, s)
 	}
 	return r, nil
+}
+
+// Infer legacy paths from the saved verdict and rule snapshot, never today's
+// rules or mode. Model verdict IDs can overlap builtin IDs (for example R1).
+func normalizeReviewPath(r Review) Review {
+	if r.ReviewPath != "" {
+		return r
+	}
+	switch {
+	case r.RuleID == "SCOPE_PATH" || r.RuleID == "SCOPE_TARGET":
+		r.ReviewPath = "scope"
+	case r.RuleID == "HUMAN" || r.NeedsHuman:
+		r.ReviewPath = "human"
+	case r.ModelVerdict != nil:
+		r.ReviewPath = "model"
+	default:
+		r.ReviewPath = r.Mode
+		for _, rule := range r.Rules {
+			if rule.ID == r.RuleID && rule.Enabled && rule.Decision == r.Decision {
+				r.ReviewPath = "rule"
+				break
+			}
+		}
+	}
+	return r
 }
 func (e *Engine) Decide(id, digest, decision, comment string) (Review, error) {
 	e.mu.Lock()

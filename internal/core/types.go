@@ -100,6 +100,7 @@ type Review struct {
 	Cwd          string     `json:"cwd"`
 	Digest       string     `json:"digest"`
 	Mode         string     `json:"mode"`
+	ReviewPath   string     `json:"reviewPath"` // scope / rule / human / model; Mode is only the configured fallback.
 	Version      int        `json:"version"`
 	Prompt       string     `json:"prompt"`
 	Rules        []Rule     `json:"rules"`

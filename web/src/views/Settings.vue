@@ -105,7 +105,9 @@ async function restore() {
   >
     <section class="panel form-panel">
       <h2>审查模式</h2>
-      <p class="muted">明确拒绝的规则始终优先；未定调用进入所选模式。</p>
+      <p class="muted">
+        所有接入的工具调用先检查授权范围和已启用规则。规则命中允许或拒绝后直接返回；只有未命中的调用进入下方所选模式。拒绝规则优先于允许规则。
+      </p>
       <label class="choice" :class="{ chosen: form.mode === 'human' }"
         ><input type="radio" v-model="form.mode" value="human" /><Icon
           name="UserRound"
@@ -121,7 +123,7 @@ async function restore() {
           :disabled="!store.settings?.model.tested"
         /><Icon name="Bot" /><span
           ><strong>模型审查</strong
-          ><small>由模型直接判断允许或拒绝，不转人工。</small></span
+          ><small>规则未命中的调用由模型判断允许或拒绝，不转人工。</small></span
         ></label
       >
       <div class="notice">

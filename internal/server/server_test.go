@@ -2,6 +2,7 @@ package server
 
 import (
 	"aegishook/internal/core"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,40 @@ import (
 	"testing"
 	"testing/fstest"
 )
+
+func TestRuleFirstHookResponse(t *testing.T) {
+	e, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	if err := e.Register(core.Instance{ID: "fixture", Agent: "claude", SessionID: "fixture", Cwd: t.TempDir(), HookVersion: core.Version}); err != nil {
+		t.Fatal(err)
+	}
+	h := New(e, fstest.MapFS{}, "fixture-admin", "fixture-hook", t.TempDir()).Handler()
+	for _, tc := range []struct{ tool, args, decision, path string }{
+		{"Read", `{"file_path":"README.md"}`, "approve", "rule"},
+		{"Bash", `{"command":"redis-cli FLUSHALL"}`, "reject", "rule"},
+		{"Bash", `{"command":"echo fixture"}`, "pending", "human"},
+	} {
+		body := `{"instanceId":"fixture","callId":"` + core.ID() + `","toolName":"` + tc.tool + `","argumentsObj":` + tc.args + `}`
+		req := httptest.NewRequest("POST", "http://127.0.0.1:18790/api/v1/reviews", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer fixture-hook")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		var got map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 || got["reviewPath"] != tc.path || got["decision"] != tc.decision {
+			t.Fatalf("status=%d path=%v decision=%v err=%v", w.Code, got["reviewPath"], got["decision"], err)
+		}
+		r, err := e.Review(got["id"].(string))
+		if err != nil || r.ReviewPath != tc.path || r.Decision != tc.decision {
+			t.Fatal("hook response differs from stored console record", err)
+		}
+		if _, exposed := got["rules"]; exposed {
+			t.Fatal("hook response must not expose rule snapshots")
+		}
+	}
+}
 
 func TestAuthBoundaries(t *testing.T) {
 	e, err := core.Open(t.TempDir())
