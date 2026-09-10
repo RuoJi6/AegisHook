@@ -9,6 +9,9 @@ import type {
   Rule,
   Scope,
   Settings,
+  ClientNode,
+  ClientRequest,
+  ClientIPBlock,
 } from "./types";
 export const isOnlineInstance = (i: Instance) =>
   i.online && i.state !== "disconnected" && i.connectionMode !== "events";
@@ -45,6 +48,9 @@ export const useConsole = defineStore("console", () => {
     loading = ref(false),
     streamOnline = ref(false);
   const calls = ref<Call[]>([]),
+    clientNodes = ref<ClientNode[]>([]),
+    clientRequests = ref<ClientRequest[]>([]),
+    clientBlocks = ref<ClientIPBlock[]>([]),
     instances = ref<Instance[]>([]),
     installations = ref<Installation[]>([]),
     rules = ref<Rule[]>([]),
@@ -61,17 +67,23 @@ export const useConsole = defineStore("console", () => {
   const online = computed(
     () => instances.value.filter(isOnlineInstance).length,
   );
-  const eventConnections = computed(() => instances.value.filter(isEventInstance).length);
-  const recentEvents = computed(() => instances.value.filter(isRecentEventInstance).length);
-  const sessionSummary = computed(() =>
-    `持续在线 ${online.value} · 事件接入 ${eventConnections.value}（最近活跃 ${recentEvents.value}）`,
+  const eventConnections = computed(
+    () => instances.value.filter(isEventInstance).length,
+  );
+  const recentEvents = computed(
+    () => instances.value.filter(isRecentEventInstance).length,
+  );
+  const sessionSummary = computed(
+    () =>
+      `持续在线 ${online.value} · 事件接入 ${eventConnections.value}（最近活跃 ${recentEvents.value}）`,
   );
   const sortedInstances = computed(() =>
-    [...instances.value].sort((a, b) =>
-      Number(isOnlineInstance(b) || isRecentEventInstance(b)) -
-        Number(isOnlineInstance(a) || isRecentEventInstance(a)) ||
-      (Date.parse(b.heartbeat) || 0) - (Date.parse(a.heartbeat) || 0) ||
-      a.id.localeCompare(b.id),
+    [...instances.value].sort(
+      (a, b) =>
+        Number(isOnlineInstance(b) || isRecentEventInstance(b)) -
+          Number(isOnlineInstance(a) || isRecentEventInstance(a)) ||
+        (Date.parse(b.heartbeat) || 0) - (Date.parse(a.heartbeat) || 0) ||
+        a.id.localeCompare(b.id),
     ),
   );
   let stream: EventSource | undefined,
@@ -80,16 +92,20 @@ export const useConsole = defineStore("console", () => {
     if (loading.value) return;
     loading.value = true;
     try {
-      const [c, i, inst, r, sc, a, s, u] = await Promise.all([
-        api<Call[]>("/calls"),
-        api<Instance[]>("/instances"),
-        api<Installation[]>("/installations"),
-        api<Rule[]>("/rules"),
-        api<Scope[]>("/scopes"),
-        api<any[]>("/audit"),
-        api<Settings>("/settings"),
-        api<UsageRecord[]>("/usage"),
-      ]);
+      const [c, i, inst, r, sc, a, s, u, nodes, requests, blocks] =
+        await Promise.all([
+          api<Call[]>("/calls"),
+          api<Instance[]>("/instances"),
+          api<Installation[]>("/installations"),
+          api<Rule[]>("/rules"),
+          api<Scope[]>("/scopes"),
+          api<any[]>("/audit"),
+          api<Settings>("/settings"),
+          api<UsageRecord[]>("/usage"),
+          api<ClientNode[]>("/client-nodes"),
+          api<ClientRequest[]>("/client-requests"),
+          api<ClientIPBlock[]>("/client-ip-blocks"),
+        ]);
       calls.value = c;
       instances.value = i;
       installations.value = inst;
@@ -98,6 +114,9 @@ export const useConsole = defineStore("console", () => {
       audits.value = a;
       settings.value = s;
       usage.value = u;
+      clientNodes.value = nodes;
+      clientRequests.value = requests;
+      clientBlocks.value = blocks;
       updatedAt.value = new Date().toISOString();
       error.value = "";
     } catch (e) {
@@ -174,6 +193,9 @@ export const useConsole = defineStore("console", () => {
     loading,
     streamOnline,
     calls,
+    clientNodes,
+    clientRequests,
+    clientBlocks,
     instances,
     installations,
     rules,

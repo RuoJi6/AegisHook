@@ -7,8 +7,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { isIPv4, isIPv6 } from "node:net";
+import { platform } from "node:os";
 
-type Config = { endpoint: string; token: string };
+type Config = { endpoint: string; token: string; nodeId?: string };
 type Review = {
   id: string;
   decision: "pending" | "approve" | "reject";
@@ -134,6 +135,8 @@ export default function aegisHook(pi: ExtensionAPI) {
       cwd: ctx.cwd,
       piVersion: "0.85.1",
       hookVersion: HOOK_VERSION,
+      nodeId: config?.nodeId,
+      platform: platform(),
     });
     if (ownEpoch === epoch) {
       registered = true;
@@ -162,8 +165,7 @@ export default function aegisHook(pi: ExtensionAPI) {
       );
       const u = new URL(candidate.endpoint);
       if (
-        !isLoopbackHost(u.hostname) ||
-        u.protocol !== "http:" ||
+        !(u.protocol === "https:" || (u.protocol === "http:" && isLoopbackHost(u.hostname))) ||
         u.username ||
         u.password ||
         u.search ||

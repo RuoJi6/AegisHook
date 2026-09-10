@@ -18,6 +18,8 @@
 
 
 
+远程 Hook 的下载、审批、安装与卸载见 [远程接入说明](docs/remote-clients.md)。
+
 ## 下载与版本发布
 
 从 [GitHub Releases](https://github.com/RuoJi6/AegisHook/releases) 下载对应平台压缩包，解压后运行其中的 `aegishook`（Windows 为 `aegishook.exe`）。发布包包含已编译的 Vue 页面和 Hook 资源，不需要另外安装 Go、Node 或前端依赖；Agent 本身仍需单独安装。

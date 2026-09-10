@@ -41,11 +41,13 @@ type Rule struct {
 	Message   string         `json:"message"`
 }
 type Scope struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Project string   `json:"project"`
-	Targets []string `json:"targets"`
-	Paths   []string `json:"paths"`
+	NodeID   string   `json:"nodeId,omitempty"`
+	Platform string   `json:"platform,omitempty"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Project  string   `json:"project"`
+	Targets  []string `json:"targets"`
+	Paths    []string `json:"paths"`
 }
 type Installation struct {
 	Agent          string    `json:"agent"`
@@ -63,6 +65,8 @@ type Installation struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 type Instance struct {
+	NodeID                string    `json:"nodeId,omitempty"`
+	Platform              string    `json:"platform,omitempty"`
 	DisconnectReason      string    `json:"disconnectReason,omitempty"`
 	Agent                 string    `json:"agent"`
 	AgentVersion          string    `json:"agentVersion,omitempty"`

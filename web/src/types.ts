@@ -25,6 +25,8 @@ export interface Call {
   deadline: string;
 }
 export interface Instance {
+  nodeId?: string;
+  platform?: string;
   disconnectReason?: string;
   agent?: string;
   agentVersion?: string;
@@ -73,11 +75,34 @@ export interface Rule {
   message: string;
 }
 export interface Scope {
+  nodeId?: string;
+  platform?: string;
   id: string;
   name: string;
   project: string;
   targets: string[];
   paths: string[];
+}
+export interface ClientNode {
+  id: string;
+  name: string;
+  platform: string;
+  createdAt: string;
+  revoked: boolean;
+}
+export interface ClientRequest {
+  id: string;
+  name: string;
+  platform: string;
+  ip: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+}
+export interface ClientIPBlock {
+  id: string;
+  ip: string;
+  createdAt: string;
 }
 export interface Settings {
   mode: string;

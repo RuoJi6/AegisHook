@@ -97,6 +97,9 @@ func has(s string, patterns ...string) bool {
 	return false
 }
 func builtinMatches(input ReviewInput, cwd string) map[string]string {
+	return builtinMatchesPaths(input, cwd, policyPath)
+}
+func builtinMatchesPaths(input ReviewInput, cwd string, resolve func(string, string) string) map[string]string {
 	hits := map[string]string{}
 	add := func(id, what string) { hits[id] = what }
 	name := strings.ToLower(input.ToolName)
@@ -122,7 +125,7 @@ func builtinMatches(input ReviewInput, cwd string) map[string]string {
 	}
 	if name == "write" || name == "edit" {
 		p := argumentText(input.Arguments, "path", "file_path", "filePath")
-		if protectedPath(policyPath(p, cwd)) {
+		if protectedPath(resolve(p, cwd)) {
 			add("R2", "写入系统配置文件")
 		}
 	}
@@ -132,7 +135,7 @@ func builtinMatches(input ReviewInput, cwd string) map[string]string {
 			syntax.Walk(tree, func(n syntax.Node) bool {
 				if red, ok := n.(*syntax.Redirect); ok && red.Word != nil {
 					if red.Op == syntax.RdrOut || red.Op == syntax.AppOut || red.Op == syntax.RdrAll || red.Op == syntax.AppAll {
-						if protectedPath(policyPath(literalWord(red.Word), cwd)) {
+						if protectedPath(resolve(literalWord(red.Word), cwd)) {
 							add("R2", "重定向写入系统配置")
 						}
 					}
@@ -258,8 +261,11 @@ func sortRules(rules []Rule) {
 	})
 }
 func evaluateAt(in ReviewInput, rules []Rule, cwd string) *Decision {
+	return evaluatePaths(in, rules, cwd, policyPath)
+}
+func evaluatePaths(in ReviewInput, rules []Rule, cwd string, resolve func(string, string) string) *Decision {
 	// Collect every semantic hit: disabling one rule must not hide another operation.
-	hits := builtinMatches(in, cwd)
+	hits := builtinMatchesPaths(in, cwd, resolve)
 	ordered := append([]Rule(nil), rules...)
 	sortRules(ordered)
 	for _, saved := range ordered {
@@ -379,16 +385,25 @@ func (e *Engine) SaveScope(s Scope) error {
 	if s.ID == "" {
 		s.ID = ID()
 	}
-	if s.Name == "" || !filepath.IsAbs(s.Project) {
+	if s.NodeID != "" {
+		if !hasExact(s.Platform, "linux", "darwin", "windows") || !agentPathAbs(s.Project, s.Platform) {
+			return errors.New("远程授权范围须填写节点平台和绝对项目路径")
+		}
+	} else if !filepath.IsAbs(s.Project) {
+		return errors.New("请填写绝对项目路径")
+	}
+	if s.Name == "" {
 		return errors.New("请填写名称及绝对项目路径")
 	}
-	p, err := filepath.EvalSymlinks(s.Project)
-	if err != nil {
-		return errors.New("项目路径不存在")
+	if s.NodeID == "" {
+		p, err := filepath.EvalSymlinks(s.Project)
+		if err != nil {
+			return errors.New("项目路径不存在")
+		}
+		s.Project = p
 	}
-	s.Project = p
 	for _, p := range s.Paths {
-		if !filepath.IsAbs(p) {
+		if (s.NodeID == "" && !filepath.IsAbs(p)) || (s.NodeID != "" && !agentPathAbs(p, s.Platform)) {
 			return errors.New("允许路径须为绝对路径")
 		}
 	}
@@ -409,16 +424,19 @@ func within(root, p string) bool {
 	return err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator))
 }
 func checkScope(in ReviewInput, cwd string, scopes []Scope) *Decision {
+	return checkScopePaths(in, cwd, scopes, policyPath, within)
+}
+func checkScopePaths(in ReviewInput, cwd string, scopes []Scope, resolve func(string, string) string, contains func(string, string) bool) *Decision {
 	for _, s := range scopes {
-		if !within(s.Project, cwd) {
+		if !contains(s.Project, cwd) {
 			continue
 		}
 		if hasExact(strings.ToLower(in.ToolName), "read", "write", "edit", "ls", "find", "grep", "glob") && len(s.Paths) > 0 {
 			if p := argumentText(in.Arguments, "path", "file_path", "filePath"); p != "" {
-				p = policyPath(p, cwd)
+				p = resolve(p, cwd)
 				okPath := false
 				for _, root := range s.Paths {
-					if within(policyPath(root, cwd), p) {
+					if contains(resolve(root, cwd), p) {
 						okPath = true
 					}
 				}

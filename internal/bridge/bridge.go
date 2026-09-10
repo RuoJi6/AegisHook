@@ -13,9 +13,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -23,6 +23,7 @@ import (
 type Config struct {
 	Endpoint string `json:"endpoint"`
 	Token    string `json:"token"`
+	NodeID   string `json:"nodeId,omitempty"`
 }
 type client struct {
 	cfg  Config
@@ -137,11 +138,11 @@ func Run(agent, connection string, in io.Reader, out, stderr io.Writer) (code in
 	if err != nil || json.Unmarshal(b, &cfg) != nil {
 		return fail(errors.New("无法读取 Hook 连接配置"))
 	}
-	u, err := url.Parse(cfg.Endpoint)
-	if err != nil || u.Scheme != "http" || !localaddr.IsLoopback(u.Hostname()) || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || cfg.Token == "" {
-		return fail(errors.New("Hook 连接必须使用本机回环地址"))
+	endpoint, err := localaddr.Endpoint(cfg.Endpoint)
+	if err != nil || cfg.Token == "" {
+		return fail(errors.New("Hook 连接地址或凭据无效：远程须使用 HTTPS"))
 	}
-	cfg.Endpoint = strings.TrimRight(cfg.Endpoint, "/")
+	cfg.Endpoint = endpoint
 	c := client{cfg: cfg, http: &http.Client{Timeout: 2500 * time.Millisecond, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("禁止重定向") }}}
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour+time.Minute)
 	defer cancel()
@@ -154,6 +155,9 @@ func Run(agent, connection string, in io.Reader, out, stderr io.Writer) (code in
 		cwd = real
 	}
 	instance := hash(agent, session, cwd)
+	if cfg.NodeID != "" {
+		instance = hash(cfg.NodeID, agent, session, cwd)
+	}
 	if event == "SessionEnd" {
 		return passive(c.request(ctx, "/instances/"+instance+"/shutdown", map[string]any{}, nil), stderr)
 	}
@@ -161,7 +165,7 @@ func Run(agent, connection string, in io.Reader, out, stderr io.Writer) (code in
 		return fail(errors.New("不支持的 Hook 事件"))
 	}
 	if err = c.request(ctx, "/instances/"+instance+"/heartbeat", map[string]any{"state": "idle"}, nil); err != nil {
-		err = c.request(ctx, "/instances", core.Instance{ID: instance, Agent: agent, AgentVersion: text(m, "agent_version"), SessionID: session, Cwd: cwd, HookVersion: core.Version, ConnectionMode: "events"}, nil)
+		err = c.request(ctx, "/instances", core.Instance{ID: instance, NodeID: cfg.NodeID, Platform: runtime.GOOS, Agent: agent, AgentVersion: text(m, "agent_version"), SessionID: session, Cwd: cwd, HookVersion: core.Version, ConnectionMode: "events"}, nil)
 		if err != nil {
 			return fail(err)
 		}

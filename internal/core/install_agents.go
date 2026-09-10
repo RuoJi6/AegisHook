@@ -44,7 +44,7 @@ func hookEvents(agent string) []string {
 	}
 	return events
 }
-func (e *Engine) hookGroup(i Installation, event string) map[string]any {
+func hookGroup(i Installation, event string) map[string]any {
 	timeout := 86520
 	if event != "PreToolUse" {
 		timeout = 10
@@ -82,7 +82,7 @@ func loadHookDocument(path string) (map[string]any, []byte, os.FileMode, error) 
 	}
 	return doc, b, mode, nil
 }
-func (e *Engine) modifyHookDocument(i Installation, install bool) ([]byte, []byte, os.FileMode, error) {
+func modifyHookDocument(i Installation, install bool) ([]byte, []byte, os.FileMode, error) {
 	doc, old, mode, err := loadHookDocument(i.Entry)
 	if err != nil {
 		return nil, nil, mode, err
@@ -104,7 +104,7 @@ func (e *Engine) modifyHookDocument(i Installation, install bool) ([]byte, []byt
 				return nil, nil, mode, errors.New("现有事件配置格式异常")
 			}
 		}
-		want := e.hookGroup(i, event)
+		want := hookGroup(i, event)
 		wantBytes, _ := json.Marshal(want)
 		next := []any{}
 		found := false
@@ -226,7 +226,7 @@ func (e *Engine) InstallAgent(agent, scope, project, piDir string) (Installation
 		}
 		next = []byte(out.ManagedContent)
 	} else {
-		next, old, mode, err = e.modifyHookDocument(out, true)
+		next, old, mode, err = modifyHookDocument(out, true)
 		if err != nil {
 			return out, err
 		}
@@ -265,7 +265,7 @@ func (e *Engine) uninstallAgent(i Installation) error {
 			err = os.Remove(i.Entry)
 		}
 	} else {
-		next, old, mode, err = e.modifyHookDocument(i, false)
+		next, old, mode, err = modifyHookDocument(i, false)
 		if err == nil && old != nil {
 			err = AtomicFile(i.Entry, next, mode)
 		}
@@ -300,7 +300,7 @@ func (e *Engine) agentEntryOK(i Installation) bool {
 		}
 		found := false
 		for _, g := range groups {
-			if bytes.Equal(mustJSON(g), mustJSON(e.hookGroup(i, event))) {
+			if bytes.Equal(mustJSON(g), mustJSON(hookGroup(i, event))) {
 				found = true
 			}
 		}

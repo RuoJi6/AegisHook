@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from "vue";
 import { useRoute } from "vue-router";
-import { api, useConsole, date, agentName, connectionLabel, instanceStatusClass } from "../store";
+import {
+  api,
+  useConsole,
+  date,
+  agentName,
+  connectionLabel,
+  instanceStatusClass,
+} from "../store";
 import type { Rule, Scope } from "../types";
 import { usePagination } from "../pagination";
 import Pagination from "../components/Pagination.vue";
 import Icon from "../components/Icon.vue";
 import AppSelect from "../components/AppSelect.vue";
 import RuleSemantics from "../components/RuleSemantics.vue";
+import RemoteClients from "../components/RemoteClients.vue";
 const semanticExpanded = ref("");
 const semanticDefaults = ref<Rule[]>([]);
 const formSemantics = computed(
@@ -25,6 +33,8 @@ onMounted(async () => {
 const store = useConsole(),
   route = useRoute();
 const kind = computed(() => route.path.slice(1));
+const deviceLabel = (id?: string) =>
+  id ? store.clientNodes.find((n) => n.id === id)?.name || id : "控制台本机";
 const headings: Record<string, string> = {
   agents: "Agent 接入",
   rules: "策略规则",
@@ -159,6 +169,9 @@ function editScope(s?: Scope) {
 }
 async function saveScope() {
   if (!scopeForm.value) return;
+  scopeForm.value.platform =
+    store.clientNodes.find((n) => n.id === scopeForm.value?.nodeId)?.platform ||
+    "";
   scopeForm.value.targets = targets.value
     .split("\n")
     .map((x) => x.trim().toLowerCase())
@@ -222,7 +235,8 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
     </div>
   </div>
   <template v-if="kind === 'agents'"
-    ><section class="panel connection-card">
+    ><RemoteClients />
+    <section class="panel connection-card">
       <div class="agent-emblem"><Icon name="Bot" :size="32" /></div>
       <div class="agent-summary">
         <div class="inline">
@@ -262,7 +276,9 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
     <section class="panel">
       <div class="panel-heading">
         <strong>安装范围</strong
-        ><span class="muted">当前用户或指定项目 · 历史接入验证不随会话结束清除</span>
+        ><span class="muted"
+          >当前用户或指定项目 · 历史接入验证不随会话结束清除</span
+        >
       </div>
       <div class="table-scroll">
         <table>
@@ -292,10 +308,15 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
                   :class="
                     i.configStatus === 'configured'
                       ? 'approve'
-                      : i.configStatus === 'entry_error' ? 'reject' : ''
+                      : i.configStatus === 'entry_error'
+                        ? 'reject'
+                        : ''
                   "
-                  >{{ configStatuses[i.configStatus] }}</span>
-                <small v-if="i.status === 'waiting_reload'">已有会话仍需重载</small>
+                  >{{ configStatuses[i.configStatus] }}</span
+                >
+                <small v-if="i.status === 'waiting_reload'"
+                  >已有会话仍需重载</small
+                >
               </td>
               <td>
                 <span class="badge" :class="i.observed ? 'approve' : ''">
@@ -358,15 +379,13 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
                 <strong>{{ agentName(i.agent) }}</strong
                 ><small class="mono">{{ i.sessionId.slice(0, 16) }}</small>
               </td>
-              <td class="path-text">{{ i.cwd }}</td>
+              <td class="path-text">
+                {{ i.cwd }}<small>{{ deviceLabel(i.nodeId) }}</small>
+              </td>
               <td>
-                <span
-                  class="badge"
-                  :class="
-                    instanceStatusClass(i)
-                  "
-                  >{{ connectionLabel(i) }}</span
-                >
+                <span class="badge" :class="instanceStatusClass(i)">{{
+                  connectionLabel(i)
+                }}</span>
               </td>
               <td>{{ date(i.heartbeat) }}</td>
             </tr>
@@ -386,7 +405,9 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
       />
     </section>
     <p class="muted tiny">
-      审查范围以客户端提供的工具事件为准，不逐项拦截脚本内部行为。事件接入表示会话曾上报事件；最近活跃表示 30 秒内收到事件或审查心跳，不代表持续在线。安装范围的接入验证保留历史证据，会话结束、失联或服务重启不会清除。
+      审查范围以客户端提供的工具事件为准，不逐项拦截脚本内部行为。事件接入表示会话曾上报事件；最近活跃表示
+      30
+      秒内收到事件或审查心跳，不代表持续在线。安装范围的接入验证保留历史证据，会话结束、失联或服务重启不会清除。
     </p></template
   >
   <template v-if="kind === 'rules'"
@@ -545,7 +566,7 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
             <tr v-for="s in scopePage.rows" :key="s.id">
               <td>
                 <strong>{{ s.name }}</strong
-                ><small>{{ s.project }}</small>
+                ><small>{{ deviceLabel(s.nodeId) }} · {{ s.project }}</small>
               </td>
               <td>{{ s.targets.join(", ") || "不额外限制" }}</td>
               <td class="path-text">
@@ -797,6 +818,21 @@ const auditPage = usePagination(() => auditRows.value, [kind, filter]);
   <div v-if="scopeForm" class="modal-backdrop" @click.self="scopeForm = null">
     <form class="modal" @submit.prevent="saveScope">
       <h2>授权范围</h2>
+      <label
+        >所属设备<AppSelect
+          :model-value="scopeForm.nodeId || ''"
+          @update:model-value="scopeForm.nodeId = $event"
+          label="所属设备"
+          :options="[
+            { value: '', label: '控制台本机' },
+            ...store.clientNodes
+              .filter((n) => !n.revoked)
+              .map((n) => ({
+                value: n.id,
+                label: `${n.name || n.id} (${n.platform})`,
+              })),
+          ]"
+      /></label>
       <label>名称<input v-model="scopeForm.name" required /></label
       ><label>项目绝对路径<input v-model="scopeForm.project" required /></label
       ><label

@@ -19,11 +19,19 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "client" {
+		if err := runClient(os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, core.RedactText(err.Error()))
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
 		fmt.Printf("AegisHook %s (Hook %s)\n", core.ReleaseVersion, core.Version)
 		return
@@ -119,6 +127,15 @@ func run() error {
 		return err
 	}
 	s := server.New(e, ui, admin, hook, o.agentDir)
+	s.PublicURL = o.publicURL
+	s.ClientBinaryDir = o.clientBinaries
+	if o.trustedProxy != "" {
+		s.TrustedProxies = strings.Split(o.trustedProxy, ",")
+	}
+	s.DownloadID, err = server.InitializeClientDownloads(e)
+	if err != nil {
+		return err
+	}
 	httpServer := &http.Server{Addr: o.addr, Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	listener, err := net.Listen("tcp", o.addr)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 type options struct {
 	command, dataDir, addr, agent, scope, project, id, agentDir string
+	publicURL, clientBinaries, trustedProxy                     string
 }
 
 func parseOptions(args []string, output io.Writer) (options, error) {
@@ -37,6 +39,11 @@ func parseOptions(args []string, output io.Writer) (options, error) {
 	host := f.String("host", "127.0.0.1", "本机回环地址：localhost、127.x.x.x 或 ::1")
 	port := f.Int("port", 18790, "监听端口（1–65535）")
 	f.StringVar(&o.addr, "addr", "", "完整地址 host:port（IPv6 为 [::1]:port）；不能与 --host/--port 同用")
+	if o.command == "serve" {
+		f.StringVar(&o.clientBinaries, "client-binaries", "", "自托管客户端程序目录；省略时从 Release 下载")
+		f.StringVar(&o.trustedProxy, "trusted-proxies", "", "允许设置 X-Real-IP 的代理 CIDR，逗号分隔；默认不信任")
+		f.StringVar(&o.publicURL, "public-url", "", "HTTPS 反向代理的公开源站地址；默认只允许本机访问")
+	}
 	if o.command == "serve" || o.command == "install" {
 		f.StringVar(&o.agentDir, "agent-dir", core.AgentDir(), "Pi 用户目录")
 	} else {
@@ -85,5 +92,19 @@ func parseOptions(args []string, output io.Writer) (options, error) {
 		return o, fmt.Errorf("端口必须在 1–65535 之间，收到 %d", *port)
 	}
 	o.addr = net.JoinHostPort(strings.ToLower(*host), strconv.Itoa(*port))
+	if o.trustedProxy != "" {
+		for _, v := range strings.Split(o.trustedProxy, ",") {
+			if _, err := netip.ParsePrefix(strings.TrimSpace(v)); err != nil {
+				return o, fmt.Errorf("--trusted-proxies 必须是逗号分隔的 IP CIDR")
+			}
+		}
+	}
+	if o.publicURL != "" {
+		var err error
+		o.publicURL, err = localaddr.Endpoint(o.publicURL)
+		if err != nil || !strings.HasPrefix(o.publicURL, "https://") {
+			return o, fmt.Errorf("--public-url 必须是 HTTPS 源站地址")
+		}
+	}
 	return o, nil
 }

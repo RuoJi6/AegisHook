@@ -45,12 +45,23 @@ func TestInvalidOptions(t *testing.T) {
 		{"--addr", "localhost:18800", "--port", "18790"},
 		{"--host", "127.0.0.1", "--addr", "localhost:18800"},
 		{"serve", "extra"}, {""}, {"bogus"}, {"--unknown"},
+		{"serve", "--public-url", "http://review.example"},
+		{"serve", "--public-url", "https://review.example/path"},
+		{"serve", "--trusted-proxies", "127.0.0.1"},
+		{"serve", "--trusted-proxies", "127.0.0.1/32,invalid"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			if _, err := parseOptions(args, io.Discard); err == nil {
 				t.Fatal("invalid options accepted")
 			}
 		})
+	}
+}
+
+func TestRemoteServeOptionsKeepLoopback(t *testing.T) {
+	o, err := parseOptions([]string{"serve", "--public-url", "https://review.example/", "--trusted-proxies", "127.0.0.1/32,::1/128", "--client-binaries", "/fixture/clients"}, io.Discard)
+	if err != nil || o.addr != "127.0.0.1:18790" || o.publicURL != "https://review.example" || o.clientBinaries != "/fixture/clients" {
+		t.Fatal("remote configuration changed listener or origin", err)
 	}
 }
 

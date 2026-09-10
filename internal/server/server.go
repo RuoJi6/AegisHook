@@ -4,6 +4,7 @@ import (
 	"aegishook/internal/core"
 	"aegishook/internal/localaddr"
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,9 @@ import (
 type Server struct {
 	Engine                          *core.Engine
 	AdminToken, HookToken, AgentDir string
+	PublicURL                       string
+	DownloadID, ClientBinaryDir     string
+	TrustedProxies                  []string
 	UI                              fs.FS
 	mu                              sync.Mutex
 	sessions                        map[string]time.Time
@@ -63,6 +67,52 @@ func read(w http.ResponseWriter, r *http.Request, v any) bool {
 func eq(a, b string) bool { return a != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.clientDownloads(mux)
+	s.clientRequestRoutes(mux)
+	mux.HandleFunc("POST /api/v1/client/enroll", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Code     string `json:"code"`
+			Platform string `json:"platform"`
+		}
+		if !read(w, r, &in) {
+			return
+		}
+		connection, err := s.Engine.EnrollClient(in.Code, in.Platform)
+		if err != nil {
+			fail(w, 403, err)
+			return
+		}
+		write(w, connection)
+	})
+	mux.HandleFunc("POST /api/v1/client-enrollments", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Name string `json:"name"`
+		}
+		if !read(w, r, &in) {
+			return
+		}
+		code, err := s.Engine.CreateEnrollment(in.Name)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		write(w, code)
+	})
+	mux.HandleFunc("GET /api/v1/client-nodes", func(w http.ResponseWriter, r *http.Request) {
+		nodes, err := s.Engine.ClientNodes()
+		if err != nil {
+			fail(w, 500, err)
+			return
+		}
+		write(w, nodes)
+	})
+	mux.HandleFunc("DELETE /api/v1/client-nodes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Engine.RevokeClient(r.PathValue("id")); err != nil {
+			fail(w, 404, err)
+			return
+		}
+		write(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("POST /api/v1/login", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Token string `json:"token"`
@@ -78,7 +128,7 @@ func (s *Server) Handler() http.Handler {
 		s.mu.Lock()
 		s.sessions[token] = time.Now().Add(12 * time.Hour)
 		s.mu.Unlock()
-		http.SetCookie(w, &http.Cookie{Name: "aegis_session", Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 43200})
+		http.SetCookie(w, &http.Cookie{Name: "aegis_session", Value: token, Path: "/", HttpOnly: true, Secure: s.publicRequest(r), SameSite: http.SameSiteStrictMode, MaxAge: 43200})
 		write(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("POST /api/v1/logout", func(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +138,7 @@ func (s *Server) Handler() http.Handler {
 			delete(s.sessions, c.Value)
 			s.mu.Unlock()
 		}
-		http.SetCookie(w, &http.Cookie{Name: "aegis_session", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: "aegis_session", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.publicRequest(r), SameSite: http.SameSiteStrictMode})
 		write(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/v1/me", func(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +260,20 @@ func (s *Server) Handler() http.Handler {
 		if !read(w, r, &in) {
 			return
 		}
-		in.Installations = s.Engine.BindAgentInstallations(in.Agent, in.Cwd)
+		in.Installations = nil
+		if node, ok := requestClient(r); ok {
+			if in.NodeID != node.ID {
+				fail(w, 403, errors.New("设备身份不匹配"))
+				return
+			}
+			in.Platform = node.Platform
+		} else if in.NodeID != "" {
+			fail(w, 403, errors.New("远程节点须使用独立设备凭据"))
+			return
+		}
+		if in.NodeID == "" {
+			in.Installations = s.Engine.BindAgentInstallations(in.Agent, in.Cwd)
+		}
 		if err := s.Engine.Register(in); err != nil {
 			fail(w, 400, err)
 			return
@@ -218,6 +281,9 @@ func (s *Server) Handler() http.Handler {
 		write(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("POST /api/v1/instances/{id}/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		if !s.ownsInstance(w, r, r.PathValue("id")) {
+			return
+		}
 		var in struct {
 			State string `json:"state"`
 		}
@@ -231,6 +297,9 @@ func (s *Server) Handler() http.Handler {
 		write(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("POST /api/v1/instances/{id}/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if !s.ownsInstance(w, r, r.PathValue("id")) {
+			return
+		}
 		if err := s.Engine.Disconnect(r.PathValue("id")); err != nil {
 			fail(w, 409, err)
 			return
@@ -240,6 +309,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reviews", func(w http.ResponseWriter, r *http.Request) {
 		var in core.ReviewInput
 		if !read(w, r, &in) {
+			return
+		}
+		if !s.ownsInstance(w, r, in.InstanceID) {
 			return
 		}
 		v, err := s.Engine.Submit(in)
@@ -256,6 +328,9 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			if !s.ownsInstance(w, r, v.InstanceID) {
+				return
+			}
 			if r.URL.Query().Get("instanceId") != v.InstanceID {
 				fail(w, 403, errors.New("实例不匹配"))
 				return
@@ -272,6 +347,9 @@ func (s *Server) Handler() http.Handler {
 			Result     string `json:"result"`
 		}
 		if !read(w, r, &in) {
+			return
+		}
+		if !s.ownsInstance(w, r, in.InstanceID) {
 			return
 		}
 		if err := s.Engine.Result(r.PathValue("id"), in.InstanceID, in.State, in.Result); err != nil {
@@ -442,7 +520,8 @@ func (s *Server) Handler() http.Handler {
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
-		if !hasHost(host) {
+		public := s.publicRequest(r)
+		if !hasHost(host) && !public {
 			fail(w, 403, errors.New("仅允许本机主机名"))
 			return
 		}
@@ -450,17 +529,34 @@ func (s *Server) Handler() http.Handler {
 			w.Header().Set("Cache-Control", "no-store")
 			if origin := r.Header.Get("Origin"); origin != "" {
 				u, err := url.Parse(origin)
-				if err != nil || u.Host != r.Host || u.Scheme != "http" {
+				scheme := "http"
+				if public {
+					scheme = "https"
+				}
+				if err != nil || u.Host != r.Host || u.Scheme != scheme || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 					fail(w, 403, errors.New("请求来源不匹配"))
 					return
 				}
 			}
-			if r.URL.Path != "/api/v1/login" {
+			if (clientBootstrap(r) || (r.Header.Get("Authorization") != "" && hookAllowed(r))) && s.Engine.ClientIPBlocked(s.clientIP(r)) {
+				fail(w, 403, errors.New("此来源已被禁止接入"))
+				return
+			}
+			if r.URL.Path != "/api/v1/login" && !clientBootstrap(r) {
 				auth := r.Header.Get("Authorization")
 				if auth != "" {
-					if !strings.HasPrefix(auth, "Bearer ") || !eq(strings.TrimPrefix(auth, "Bearer "), s.HookToken) || !hookAllowed(r) {
+					if !strings.HasPrefix(auth, "Bearer ") || !hookAllowed(r) {
 						fail(w, 403, errors.New("Hook 凭据无权访问此接口"))
 						return
+					}
+					token := strings.TrimPrefix(auth, "Bearer ")
+					if !eq(token, s.HookToken) || public {
+						node, ok := s.Engine.AuthenticateClient(token)
+						if !ok {
+							fail(w, 403, errors.New("设备凭据无效或已撤销"))
+							return
+						}
+						r = r.WithContext(context.WithValue(r.Context(), clientContextKey{}, node))
 					}
 				} else {
 					cookie, err := r.Cookie("aegis_session")
@@ -482,6 +578,30 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func hasHost(h string) bool { return localaddr.IsLoopback(h) }
+
+type clientContextKey struct{}
+
+func requestClient(r *http.Request) (core.ClientNode, bool) {
+	node, ok := r.Context().Value(clientContextKey{}).(core.ClientNode)
+	return node, ok
+}
+func (s *Server) ownsInstance(w http.ResponseWriter, r *http.Request, id string) bool {
+	if r.Header.Get("Authorization") == "" {
+		return true
+	}
+	node, _ := requestClient(r)
+	if !s.Engine.ClientOwnsInstance(node.ID, id) {
+		fail(w, 403, errors.New("无权操作此设备的会话或审查"))
+		return false
+	}
+	return true
+}
+
+// The reverse proxy must preserve Host. Never trust arbitrary forwarded headers.
+func (s *Server) publicRequest(r *http.Request) bool {
+	u, err := url.Parse(s.PublicURL)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.Host == r.Host
+}
 func hookAllowed(r *http.Request) bool {
 	p := r.URL.Path
 	return (r.Method == "POST" && (p == "/api/v1/instances" || p == "/api/v1/reviews" || strings.HasPrefix(p, "/api/v1/instances/") || strings.HasPrefix(p, "/api/v1/reviews/"))) || (r.Method == "GET" && strings.HasPrefix(p, "/api/v1/reviews/"))

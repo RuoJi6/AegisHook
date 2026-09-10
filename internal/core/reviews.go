@@ -15,14 +15,23 @@ import (
 func (e *Engine) Register(i Instance) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if real, err := filepath.EvalSymlinks(i.Cwd); err == nil {
-		i.Cwd = real
+	if i.NodeID == "" {
+		if real, err := filepath.EvalSymlinks(i.Cwd); err == nil {
+			i.Cwd = real
+		}
+	}
+	if i.NodeID != "" {
+		id, err := hex.DecodeString(i.NodeID)
+		if err != nil || len(id) != 16 || !hasExact(i.Platform, "linux", "darwin", "windows") || !agentPathAbs(i.Cwd, i.Platform) {
+			return errors.New("远程节点身份、平台或项目路径无效")
+		}
+		i.Installations = nil
 	}
 	i.Agent = AgentID(i.Agent)
 	if AgentName(i.Agent) == "" {
 		return errors.New("未知 Agent")
 	}
-	if i.ID == "" || i.SessionID == "" || !filepath.IsAbs(i.Cwd) || i.HookVersion != Version {
+	if i.ID == "" || i.SessionID == "" || (i.NodeID == "" && !filepath.IsAbs(i.Cwd)) || i.HookVersion != Version {
 		return errors.New("会话字段或 Hook 版本无效")
 	}
 	// Keep historical validation separate from bindings for this registration.
@@ -30,7 +39,7 @@ func (e *Engine) Register(i Instance) error {
 	i.ObservedInstallations = nil
 	var prev Instance
 	if e.get("instances", i.ID, &prev) == nil {
-		if prev.SessionID != i.SessionID || prev.Cwd != i.Cwd || AgentID(prev.Agent) != i.Agent {
+		if prev.SessionID != i.SessionID || prev.Cwd != i.Cwd || AgentID(prev.Agent) != i.Agent || prev.NodeID != i.NodeID || (i.NodeID != "" && prev.Platform != i.Platform) {
 			return errors.New("实例身份冲突")
 		}
 		bindings := i.Installations
@@ -143,9 +152,20 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 	if err != nil {
 		return Review{}, err
 	}
-	d := checkScope(in, i.Cwd, scopes)
+	applicable := []Scope{}
+	for _, s := range scopes {
+		if s.NodeID == i.NodeID {
+			applicable = append(applicable, s)
+		}
+	}
+	resolve, contains := policyPath, within
+	if i.NodeID != "" {
+		resolve = func(p, cwd string) string { return agentPath(p, cwd, i.Platform) }
+		contains = func(root, p string) bool { return agentWithin(root, p, i.Platform) }
+	}
+	d := checkScopePaths(in, i.Cwd, applicable, resolve, contains)
 	if d == nil {
-		d = evaluateAt(in, rules, i.Cwd)
+		d = evaluatePaths(in, rules, i.Cwd, resolve)
 	}
 	s := e.Settings
 	if s.Mode == "model" {
@@ -154,7 +174,7 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 	in.Arguments = Redact(in.Arguments).(map[string]any)
 	in.UserMessage = RedactText(in.UserMessage)
 	in.Context = RedactText(in.Context)
-	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, Rules: rules, Scopes: scopes, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
+	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, Rules: rules, Scopes: applicable, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
 	if s.Mode == "model" {
 		if d == nil {
 			filtered := modelContext(r.Context)
