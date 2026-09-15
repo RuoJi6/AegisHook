@@ -42,55 +42,23 @@ export function validateDecision(value: unknown): Review {
   return r;
 }
 
-// Only completed tool results are execution evidence. Assistant prose and our
-// own rejection messages must not feed the next approval decision.
-export function reviewContext(
-  branch: readonly any[],
-  calls: ReadonlyMap<string, { decision: string }> = new Map(),
-) {
-  let userMessage = "";
-  const toolCalls = new Map<string, any>();
-  const recent: object[] = [];
-  for (const entry of branch) {
-    if (entry.type !== "message") continue;
+// Keep only the latest user message for local audit / human review. The server
+// excludes it from model input; previous tool calls and results are not collected.
+export function reviewContext(branch: readonly any[]) {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i];
+    if (entry.type !== "message" || entry.message.role !== "user") continue;
     const m = entry.message;
-    const blocks = Array.isArray(m.content) ? m.content : [];
     const content =
       typeof m.content === "string"
         ? m.content
-        : blocks
+        : (Array.isArray(m.content) ? m.content : [])
             .filter((b: any) => b.type === "text")
             .map((b: any) => b.text)
             .join("\n");
-    if (m.role === "user") userMessage = content;
-    if (m.role === "assistant") {
-      for (const block of blocks) {
-        if (block.type === "toolCall") toolCalls.set(block.id, block);
-      }
-    }
-    if (m.role !== "toolResult" || m.isError || !content) continue;
-    if (calls.get(m.toolCallId)?.decision === "reject") continue;
-    if (content.includes("实际操作：") && content.includes("命中规则："))
-      continue;
-    if (content.includes("AegisHook 拒绝执行：")) continue;
-    const call = toolCalls.get(m.toolCallId);
-    if (!call) continue; // An unpaired result cannot establish what executed.
-    const args = JSON.stringify(call.arguments ?? {});
-    recent.push({
-      toolCallId: m.toolCallId,
-      toolName: call.name,
-      argumentsPreview: args.slice(0, 2000),
-      result: content.slice(0, 2000),
-      status: "succeeded",
-      truncated: args.length > 2000 || content.length > 2000,
-    });
+    return { userMessage: content.slice(0, 6000) };
   }
-  const selected = recent.slice(-6);
-  while (JSON.stringify(selected).length > 12000) selected.shift();
-  return {
-    userMessage: userMessage.slice(0, 6000),
-    context: JSON.stringify(selected),
-  };
+  return { userMessage: "" };
 }
 
 export default function aegisHook(pi: ExtensionAPI) {
@@ -235,7 +203,7 @@ export default function aegisHook(pi: ExtensionAPI) {
             callId: event.toolCallId,
             toolName: event.toolName,
             argumentsObj: event.input,
-            ...reviewContext(ctx.sessionManager.getBranch(), calls),
+            ...reviewContext(ctx.sessionManager.getBranch()),
           },
           signal,
         ),

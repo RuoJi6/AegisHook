@@ -21,62 +21,49 @@ const { loadExtensions } = await import(
   ).href
 );
 
-test("review context excludes denied history and assistant speculation", () => {
+test("review context omits all prior tool calls and results", () => {
   const message = (value: any) => ({ type: "message", message: value });
-  const call = (id: string) =>
-    message({
-      role: "assistant",
-      content: [
-        {
-          type: "toolCall",
-          id,
-          name: "bash",
-          arguments: { command: "fixture read" },
-        },
-      ],
-    });
-  const result = (id: string, text: string, isError = false) =>
-    message({
-      role: "toolResult",
-      toolCallId: id,
-      isError,
-      content: [{ type: "text", text }],
-    });
-  const branch = [
-    message({ role: "user", content: "检查测试项目" }),
-    call("ok"),
-    result("ok", "one fixture record"),
-    message({ role: "assistant", content: "plan: download every record" }),
-    call("denied"),
-    result(
-      "denied",
-      "实际操作：读取工单；成功后的后果：批量读取；命中规则：R7",
-      true,
-    ),
-    call("remembered"),
-    result("remembered", "blocked by review"),
-    call("legacy"),
-    result(
-      "legacy",
-      "实际操作：读取工单；成功后的后果：批量读取；命中规则：R7",
-    ),
-    result("unpaired", "cannot tell which command ran"),
-    call("failed"),
-    result("failed", "request failed", true),
-  ];
-  const value = reviewContext(
-    branch,
-    new Map([["remembered", { decision: "reject" }]]),
+  const branch: any[] = [message({ role: "user", content: "旧任务" })];
+  for (let i = 0; i < 8; i++) {
+    branch.push(
+      message({
+        role: "assistant",
+        content: [{ type: "toolCall", id: `${i}`, name: "bash", arguments: { command: `echo previous-${i}` } }],
+      }),
+      message({
+        role: "toolResult",
+        toolCallId: `${i}`,
+        isError: false,
+        content: [{ type: "text", text: `previous-result-${i}` }],
+      }),
+    );
+  }
+  branch.push(
+    message({ role: "user", content: [{ type: "text", text: "当前任务" }] }),
   );
-  assert.equal(value.userMessage, "检查测试项目");
-  const history = JSON.parse(value.context);
-  assert.equal(history.length, 1);
-  assert.equal(history[0].toolCallId, "ok");
-  assert.equal(history[0].result, "one fixture record");
-  assert.match(history[0].argumentsPreview, /fixture read/);
-  assert.equal(history[0].status, "succeeded");
-  // Session reload may lose the in-memory verdict map; old rejection text is still excluded.
-  assert.ok(!reviewContext(branch).context.includes("命中规则"));
+  // Do not read command/result contents even while locating the last user message.
+  for (const role of ["assistant", "toolResult"]) {
+    branch.push(message({
+      role,
+      get content() { throw new Error("read historical content"); },
+    }));
+  }
+  assert.deepEqual(reviewContext(branch), { userMessage: "当前任务" });
+});
+
+test("review context keeps only bounded user text for local audit", () => {
+  assert.deepEqual(reviewContext([]), { userMessage: "" });
+  assert.deepEqual(
+    reviewContext([{ type: "message", message: { role: "user", content: "a".repeat(7000) } }]),
+    { userMessage: "a".repeat(6000) },
+  );
+  assert.deepEqual(
+    reviewContext([
+      { type: "message", message: { role: "user", content: "old user text" } },
+      { type: "message", message: { role: "user", content: [{ type: "image", data: "fixture" }] } },
+    ]),
+    { userMessage: "" },
+  );
 });
 
 test("custom loopback endpoints remain local", () => {

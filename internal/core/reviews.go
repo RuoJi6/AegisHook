@@ -194,8 +194,9 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 	if s.Mode == "model" {
 		s.Prompt = modelPrompt(s.Prompt)
 		r.Prompt = s.Prompt
-		filtered := modelContext(r.Context)
-		r.ModelContext = &filtered
+		// Explicitly record that no historical context was sent for this review.
+		emptyContext := ""
+		r.ModelContext = &emptyContext
 		r.Deadline = e.clock().Add(time.Duration(s.ModelSeconds+5) * time.Second)
 	}
 	if err = e.commitReview(r, "review.submit"); err != nil {

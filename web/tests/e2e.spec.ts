@@ -797,7 +797,8 @@ test("post-verification data guard defaults off and preserves prompt edits", asy
   const tooltip = page.getByRole("tooltip");
   await expect(tooltip).toHaveCount(0);
   await help.hover();
-  await expect(tooltip).toContainText("结合上下文中的漏洞验证证据");
+  await expect(tooltip).toContainText("仅根据当前工具参数");
+  await expect(tooltip).toContainText("不读取历史命令或结果");
   await expect(tooltip).toContainText("保存设置后生效");
   await page.mouse.move(0, 0);
   await expect(tooltip).toHaveCount(0);

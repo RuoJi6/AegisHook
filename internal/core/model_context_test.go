@@ -2,38 +2,57 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 const previousVerdict = "实际操作：遍历工单；成功后的后果：读取业务数据；命中规则：R7"
 
-func TestModelContextRemovesReviewFeedback(t *testing.T) {
-	for _, raw := range []string{
-		"toolResult: " + previousVerdict + "\nassistant: 改为本机命令\ntoolResult: " + previousVerdict,
-		"assistant: " + previousVerdict,
-		"toolResult: 实际操作：遍历工单\n；成功后的后果：读取业务数据\n；命中规则：R7",
-		"toolResult: AegisHook 拒绝执行：服务不可用。工具未执行。",
-		previousVerdict,
-	} {
-		if got := modelContext(raw); got != "" {
-			t.Errorf("review feedback retained: %q", got)
+func assertCurrentModelInput(t *testing.T, body []byte, tool string, args map[string]any) {
+	t.Helper()
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Error(err)
+		return
+	}
+	want := map[string]any{"hitlMode": "model", "toolName": tool, "argumentsObj": args}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("expected only current call: got %s, want %+v", body, want)
+	}
+}
+
+func TestModelInputCurrentOnly(t *testing.T) {
+	oldModelContext := `[{"toolName":"http","result":"previous successful export","status":"succeeded"}]`
+	for _, history := range []string{"", "toolResult: " + previousVerdict, "earlier command succeeded", oldModelContext} {
+		for _, savedContext := range []*string{nil, &oldModelContext} {
+			// Fields named context/history inside current arguments are real input,
+			// and must not be stripped along with the review's background fields.
+			args := map[string]any{"command": "pwd && echo hello", "options": map[string]any{"context": "current argument", "history": []any{"current value"}}}
+			r := Review{ReviewInput: ReviewInput{ToolName: "bash", Arguments: args, UserMessage: "old user command", Context: history}, ModelContext: savedContext}
+			body, err := json.Marshal(modelInput(r))
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertCurrentModelInput(t, body, r.ToolName, args)
+			if r.Context != history || r.ModelContext != savedContext || r.UserMessage != "old user command" {
+				t.Fatal("modified stored audit background")
+			}
 		}
 	}
-	good := "toolResult: HTTP 200，返回测试订单一条"
-	if got := modelContext(good + "\nassistant: 开始全量导出\ntoolResult: " + previousVerdict); got != good {
-		t.Fatal("lost actual result or kept speculation", got)
-	}
-	ordinaryJSON := `[{"id":1,"title":"fixture record"}]`
-	if modelContext(ordinaryJSON) != ordinaryJSON {
-		t.Fatal("ordinary JSON evidence was discarded")
-	}
-	structured := `[{"toolCallId":"ok","toolName":"http","argumentsPreview":"GET /fixture","result":"HTTP 200","status":"succeeded"},{"toolCallId":"blocked","toolName":"http","result":"denied","status":"not_executed"}]`
-	if got := modelContext(structured); !strings.Contains(got, "HTTP 200") || strings.Contains(got, "denied") {
-		t.Fatal(got)
+}
+
+func TestModelPromptCurrentOnly(t *testing.T) {
+	for _, policy := range []string{DefaultPrompt, "保留自定义规则；此前根据历史累计判断。", DataGuardPrompt} {
+		got := modelPrompt(policy)
+		if got != policy+"\n\n"+reviewInputBoundary || modelPrompt(got) != got {
+			t.Fatal("lost custom policy or duplicated current-call boundary")
+		}
 	}
 }
 
@@ -41,78 +60,88 @@ type reviewRoundTrip func(*http.Request) (*http.Response, error)
 
 func (f reviewRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// No listener or live model: inspect exactly what leaves the review boundary.
-func TestCurrentCallIsolatedFromRejectedHistory(t *testing.T) {
+// No listener or live model: inspect actual outbound requests, including a
+// format retry, for every Agent and protocol. Successful history is excluded too.
+func TestCurrentCallIsolatedFromHistory(t *testing.T) {
 	for _, protocol := range []string{"openai", "anthropic"} {
-		t.Run(protocol, func(t *testing.T) {
-			e := engine(t)
-			transport := http.DefaultTransport
-			t.Cleanup(func() { http.DefaultTransport = transport })
-			http.DefaultTransport = reviewRoundTrip(func(req *http.Request) (*http.Response, error) {
-				var payload struct {
-					System   string                           `json:"system"`
-					Messages []struct{ Role, Content string } `json:"messages"`
+		for _, agent := range []string{"pi", "claude", "codex", "opencode", "grok"} {
+			t.Run(protocol+"/"+agent, func(t *testing.T) {
+				original := http.DefaultTransport
+				t.Cleanup(func() { http.DefaultTransport = original })
+				e := engine(t)
+				if err := e.Register(Instance{ID: agent, Agent: agent, SessionID: agent, Cwd: t.TempDir(), HookVersion: Version}); err != nil {
+					t.Fatal(err)
 				}
-				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
-					t.Error(err)
+				args := map[string]any{"command": "pwd && echo hello"}
+				var requests atomic.Int32
+				http.DefaultTransport = reviewRoundTrip(func(req *http.Request) (*http.Response, error) {
+					attempt := requests.Add(1)
+					data, err := io.ReadAll(req.Body)
+					if err != nil {
+						return nil, err
+					}
+					for _, marker := range []string{"historical-command", "historical-result", "old-user-message", previousVerdict} {
+						if strings.Contains(string(data), marker) {
+							t.Errorf("historical material reached %s request: %s", protocol, marker)
+						}
+					}
+					var payload struct {
+						System   string
+						Messages []struct{ Role, Content string }
+					}
+					if err := json.Unmarshal(data, &payload); err != nil {
+						return nil, err
+					}
+					system, messages, finish := payload.System, payload.Messages, "end_turn"
+					if protocol == "openai" && len(messages) > 0 {
+						system, messages, finish = messages[0].Content, messages[1:], "stop"
+					}
+					if !strings.HasSuffix(system, reviewInputBoundary) {
+						t.Error("missing current-call boundary")
+					}
+					if len(messages) != 1+2*int(attempt-1) || len(messages) == 0 || messages[0].Role != "user" {
+						return nil, fmt.Errorf("unexpected model messages on attempt %d", attempt)
+					}
+					assertCurrentModelInput(t, []byte(messages[0].Content), "bash", args)
+					verdict := `{"decision":"approve","comment":"实际操作：输出当前目录及 hello；成功后的后果：返回本机文本；命中规则：A6"}`
+					if attempt == 1 {
+						verdict = "invalid JSON"
+					}
+					return retryResponse(protocol, verdict, finish, true), nil
+				})
+				const customPolicy = "Existing custom policy, retain this text without replacing it."
+				e.mu.Lock()
+				e.Settings.Mode = "model"
+				e.Settings.Prompt = customPolicy
+				e.Settings.Model = ModelConfig{Protocol: protocol, BaseURL: "https://fixture.invalid", Model: "fixture", Tested: true}
+				e.mu.Unlock()
+				history := []map[string]string{}
+				for i := 0; i < 6; i++ {
+					history = append(history, map[string]string{"toolCallId": fmt.Sprint(i), "toolName": "bash", "argumentsPreview": "historical-command", "result": "historical-result", "status": "succeeded"})
 				}
-				system := payload.System
-				if protocol == "openai" {
-					system = payload.Messages[0].Content
-				}
-				if !strings.Contains(system, reviewInputBoundary) {
-					t.Error("missing input boundary")
-				}
-				body := payload.Messages[len(payload.Messages)-1].Content
-				var input struct {
-					Context   string         `json:"context"`
-					ToolName  string         `json:"toolName"`
-					Arguments map[string]any `json:"argumentsObj"`
-				}
-				if err := json.Unmarshal([]byte(body), &input); err != nil {
-					t.Error(err)
-				}
-				if input.Context != "" || input.ToolName != "bash" || input.Arguments["command"] != "pwd && echo hello" {
-					t.Error("polluted or changed current call", body)
-				}
-				if strings.Index(body, `"context"`) > strings.Index(body, `"argumentsObj"`) {
-					t.Error("current call should follow history")
-				}
-				verdict := `{"decision":"approve","comment":"实际操作：输出当前目录及 hello；成功后的后果：返回本机文本；命中规则：A6"}`
-				var response any = map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": verdict}}}}
-				if protocol == "anthropic" {
-					response = map[string]any{"stop_reason": "end_turn", "content": []any{map[string]string{"type": "text", "text": verdict}}}
-				}
-				data, _ := json.Marshal(response)
-				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(data)))}, nil
-			})
-			e.mu.Lock()
-			e.Settings.Mode = "model"
-			e.Settings.Prompt = "Existing custom policy, retain this text without replacing it."
-			e.Settings.Model = ModelConfig{Protocol: protocol, BaseURL: "https://fixture.invalid", Model: "fixture", Tested: true}
-			e.mu.Unlock()
-			in := input("current-only", "bash", map[string]any{"command": "pwd && echo hello"})
-			in.Context = "toolResult: " + previousVerdict + "\nassistant: 上次被拦截，尝试本机命令"
-			r, err := e.Submit(in)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for n := 0; n < 200; n++ {
-				r, err = e.Review(r.ID)
+				data, _ := json.Marshal(history)
+				in := ReviewInput{InstanceID: agent, CallID: "current-only", ToolName: "bash", Arguments: args, UserMessage: "old-user-message " + previousVerdict, Context: string(data)}
+				r, err := e.Submit(in)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if r.Decision != "pending" {
-					break
+				for n := 0; n < 400; n++ {
+					r, err = e.Review(r.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if r.Decision != "pending" {
+						break
+					}
+					time.Sleep(5 * time.Millisecond)
 				}
-				time.Sleep(5 * time.Millisecond)
-			}
-			if r.Decision != "approve" || r.RuleID != "A6" || r.Context != in.Context || r.ModelContext == nil || *r.ModelContext != "" || !strings.Contains(r.Prompt, reviewInputBoundary) {
-				t.Fatal("lost decision or audit evidence", r)
-			}
-			if strings.Contains(e.Config().Prompt, reviewInputBoundary) {
-				t.Fatal("mutated saved user policy")
-			}
-		})
+				if r.Decision != "approve" || r.RuleID != "A6" || r.Context != in.Context || r.UserMessage != in.UserMessage || r.ModelContext == nil || *r.ModelContext != "" || r.Prompt != modelPrompt(customPolicy) || requests.Load() != 2 {
+					t.Fatalf("lost current-only decision or audit: decision=%s rule=%s requests=%d", r.Decision, r.RuleID, requests.Load())
+				}
+				if e.Config().Prompt != customPolicy {
+					t.Fatal("mutated saved user policy")
+				}
+			})
+		}
 	}
 }

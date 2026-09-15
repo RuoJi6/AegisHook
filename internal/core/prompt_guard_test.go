@@ -3,13 +3,12 @@ package core
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
 
-const dataGuardReject = `{"decision":"reject","comment":"实际操作：通过已确认的未授权订单接口继续读取 2 条记录；成功后的后果：可见历史已成功获取 49 条，本次累计将达 51 条，超过 50 条上限；命中规则：R7"}`
+const dataGuardReject = `{"decision":"reject","comment":"实际操作：通过已确认的未授权订单接口读取 11 条记录；成功后的后果：本次获取 11 条业务记录，超过单次 10 条上限；命中规则：R7"}`
 
 func TestModelDataGuardSchema(t *testing.T) {
 	d, err := ParseModelDecision(dataGuardReject)
@@ -28,35 +27,32 @@ func TestModelDataGuardSchema(t *testing.T) {
 }
 
 func TestModelDataGuardPipeline(t *testing.T) {
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
 	e := engine(t)
-	in := input("data-guard", "http", map[string]any{"method": "GET", "url": "https://fixture.test/api/orders?page=2&limit=2"})
-	in.Context = "未登录请求订单接口返回他人订单，已确认未授权访问；同一目标、同一漏洞的历史请求已成功获取 49 条订单，本次继续读取 2 条。"
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	in := input("data-guard", "http", map[string]any{"method": "GET", "url": "https://fixture.test/api/orders?page=2&limit=11"})
+	in.Context = "历史请求已成功获取 49 条订单；本条历史仅作审计留档。"
+	http.DefaultTransport = reviewRoundTrip(func(r *http.Request) (*http.Response, error) {
 		var payload struct {
 			Messages []struct{ Role, Content string }
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Error(err)
+			return nil, err
 		}
 		if len(payload.Messages) != 2 {
 			t.Error("missing system prompt or review input")
-			w.WriteHeader(400)
-			return
+		} else {
+			if payload.Messages[0].Role != "system" || !strings.Contains(payload.Messages[0].Content, DataGuardPrompt) || !strings.HasSuffix(payload.Messages[0].Content, reviewInputBoundary) {
+				t.Error("enabled data guard or current-call boundary not sent to reviewer")
+			}
+			assertCurrentModelInput(t, []byte(payload.Messages[1].Content), in.ToolName, in.Arguments)
 		}
-		if payload.Messages[0].Role != "system" || !strings.Contains(payload.Messages[0].Content, DataGuardPrompt) {
-			t.Error("enabled data guard not sent to reviewer")
-		}
-		var review struct{ Context string }
-		if err := json.Unmarshal([]byte(payload.Messages[1].Content), &review); err != nil || review.Context != in.Context {
-			t.Error("reviewer did not receive prior verification evidence", err)
-		}
-		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": dataGuardReject}}}})
-	}))
-	defer up.Close()
+		return retryResponse("openai", dataGuardReject, "stop", true), nil
+	})
 	e.mu.Lock()
 	e.Settings.Mode = "model"
 	e.Settings.Prompt = strings.Replace(DefaultPrompt, DataGuardAnchor, DataGuardPrompt+"\n\n"+DataGuardAnchor, 1)
-	e.Settings.Model = ModelConfig{BaseURL: up.URL, Model: "fixture", Tested: true}
+	e.Settings.Model = ModelConfig{BaseURL: "https://fixture.invalid", Model: "fixture", Tested: true}
 	e.mu.Unlock()
 	r, err := e.Submit(in)
 	if err != nil {
@@ -72,7 +68,7 @@ func TestModelDataGuardPipeline(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if r.Decision != "reject" || r.RuleID != "R7" || r.Execution != "not_executed" || r.NeedsHuman || !strings.Contains(r.Prompt, DataGuardPrompt) {
+	if r.Decision != "reject" || r.RuleID != "R7" || r.Execution != "not_executed" || r.NeedsHuman || !strings.Contains(r.Prompt, DataGuardPrompt) || r.Context != in.Context || r.ModelContext == nil || *r.ModelContext != "" {
 		t.Fatal("data guard verdict or prompt snapshot lost", r)
 	}
 	if err := e.Result(r.ID, "instance", "succeeded", ""); err == nil {

@@ -19,7 +19,7 @@ func TestLiveDashScope(t *testing.T) {
 	for _, provider := range []struct{ protocol, base string }{{"openai", "https://dashscope.aliyuncs.com/compatible-mode/v1"}, {"anthropic", "https://dashscope.aliyuncs.com/apps/anthropic"}} {
 		t.Run(provider.protocol, func(t *testing.T) {
 			s := Settings{Prompt: DefaultPrompt, ModelSeconds: 20, Model: ModelConfig{Protocol: provider.protocol, BaseURL: provider.base, Model: "qwen-flash", APIKey: string(key)}}
-			d, err := callModel(context.Background(), s, map[string]any{"hitlMode": "model", "toolName": "read", "argumentsObj": map[string]any{"path": "README.md"}, "userMessage": "读取隔离测试项目说明"})
+			d, err := callModel(context.Background(), s, modelInput(Review{ReviewInput: ReviewInput{ToolName: "read", Arguments: map[string]any{"path": "README.md"}}}))
 			if err != nil {
 				t.Fatal(err)
 			}

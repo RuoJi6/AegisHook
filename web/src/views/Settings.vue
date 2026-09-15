@@ -253,7 +253,7 @@ async function restore() {
       <div class="panel-heading">
         <div>
           <h2>模型审查提示词</h2>
-          <p class="muted">结合上下文审查 · 拒绝规则优先 · 模型直接裁决</p>
+          <p class="muted">仅审查当前调用 · 拒绝规则优先 · 模型直接裁决</p>
         </div>
         <button type="button" @click="restore">
           <Icon name="RotateCcw" :size="16" />恢复默认
@@ -263,7 +263,7 @@ async function restore() {
         :model-value="dataGuardEnabled"
         :disabled="!promptTemplate"
         label="限制漏洞确认后的批量取数"
-        :description="'结合上下文中的漏洞验证证据，拦截超出最小验证需要的持续取数，包括分页、遍历 ID 和拆分请求；不按 --dump 等命令关键词判断。\n默认关闭，按需开启。切换会插入或移除对应规则块，保存设置后生效。\n仅作用于进入模型审查的调用，前置允许规则仍可能直接放行。'"
+        :description="'仅根据当前工具参数判断验证状态和本次取数范围；一个调用中的循环或多个请求合并检查。不读取历史命令或结果，不计算跨调用累计量。\n默认关闭，按需开启。切换会插入或移除对应规则块，保存设置后生效。\n仅作用于进入模型审查的调用，前置允许规则仍可能直接放行。'"
         @update:model-value="toggleDataGuard"
       />
       <label
