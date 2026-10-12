@@ -31,7 +31,7 @@ const tab = ref("all"),
   rejecting = ref<Call | null>(null),
   reason = ref("");
 const isCalls = computed(() => route.path === "/calls");
-const recordsPage = reactive({ page: 1, pageSize: 20, total: 0, rows: [] as Call[] });
+const recordsPage = reactive({ page: 1, pageSize: 10, total: 0, rows: [] as Call[] });
 const pendingPage = reactive({ page: 1, pageSize: 10, total: 0, rows: [] as Call[] });
 const tabs = [
   ["all", "全部记录"],
