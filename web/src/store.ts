@@ -41,6 +41,20 @@ export async function api<T = any>(
   }
   return value;
 }
+function normalizeReviewPage(
+  value: ReviewPage | Call[],
+  page: number,
+  pageSize: number,
+): ReviewPage {
+  if (!Array.isArray(value)) return value;
+  return {
+    items: value,
+    total: value.length,
+    page,
+    pageSize,
+    pendingTotal: value.filter((call) => call.decision === "pending" && call.mode === "human").length,
+  };
+}
 export const useConsole = defineStore("console", () => {
   const ready = ref(false),
     authenticated = ref(false),
@@ -95,11 +109,11 @@ export const useConsole = defineStore("console", () => {
     if (loading.value) return;
     loading.value = true;
     try {
-      const [c, page, pendingPage, i, inst, r, sc, a, s, u, nodes, requests, blocks] =
+      const [c, pageValue, pendingPageValue, i, inst, r, sc, a, s, u, nodes, requests, blocks] =
         await Promise.all([
           api<Call[]>("/calls"),
-          api<ReviewPage>("/calls?page=1&size=20"),
-          api<ReviewPage>("/calls?page=1&size=100&decision=pending"),
+          api<ReviewPage | Call[]>("/calls?page=1&size=20"),
+          api<ReviewPage | Call[]>("/calls?page=1&size=100&decision=pending"),
           api<Instance[]>("/instances"),
           api<Installation[]>("/installations"),
           api<Rule[]>("/rules"),
@@ -111,6 +125,8 @@ export const useConsole = defineStore("console", () => {
           api<ClientRequest[]>("/client-requests"),
           api<ClientIPBlock[]>("/client-ip-blocks"),
         ]);
+      const page = normalizeReviewPage(pageValue, 1, 20);
+      const pendingPage = normalizeReviewPage(pendingPageValue, 1, 100);
       calls.value = c;
       approvalCalls.value = page.items;
       pendingCalls.value = pendingPage.items;
@@ -141,7 +157,11 @@ export const useConsole = defineStore("console", () => {
     for (const [key, value] of Object.entries(params)) {
       if (key !== "page" && key !== "size" && value !== undefined && String(value) !== "") query.set(key, String(value));
     }
-    const page = await api<ReviewPage>(`/calls?${query.toString()}`);
+    const page = normalizeReviewPage(
+      await api<ReviewPage | Call[]>(`/calls?${query.toString()}`),
+      Number(params.page || 1),
+      Number(params.size || 20),
+    );
     approvalCalls.value = page.items;
     approvalTotal.value = page.total;
     approvalPendingTotal.value = page.pendingTotal;
