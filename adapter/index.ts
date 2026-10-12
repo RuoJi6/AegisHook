@@ -2,10 +2,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isIPv4, isIPv6 } from "node:net";
 import { platform } from "node:os";
 
@@ -17,6 +17,167 @@ type Review = {
   deadline: string;
 };
 export const HOOK_VERSION = "0.1.0";
+
+const MAX_SCRIPT_BYTES = 1 << 20;
+const MAX_SCRIPT_FILES = 8;
+const SCRIPT_INTERPRETER = /^(python[0-9.]*|bash|sh|zsh|fish|node|nodejs|ruby|perl|php|pwsh|powershell)$/;
+const SCRIPT_EXTENSIONS = new Set([
+  ".sh", ".bash", ".zsh", ".fish", ".py", ".py3", ".js", ".mjs",
+  ".cjs", ".ts", ".tsx", ".rb", ".pl", ".php", ".ps1", ".lua",
+]);
+
+export type ReviewScript = {
+  path: string;
+  sha256?: string;
+  bytes?: number;
+  content?: string;
+  complete: boolean;
+  truncated?: boolean;
+  readError?: string;
+};
+
+function literalToken(token: string): string | undefined {
+  if (!token || /[$`*?\[\]~]/.test(token)) return undefined;
+  if ((token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))) return token.slice(1, -1);
+  return token;
+}
+
+function commandTokens(command: string): string[] {
+  const out: string[] = [];
+  const re = /"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+/g;
+  for (const match of command.matchAll(re)) out.push(match[0]);
+  return out;
+}
+
+function captureReferences(command: string, workingDir: string): Array<{ path?: string; problem?: string; direct?: boolean }> {
+  if (/[$`]|\$\(|\$\{|[*?\[\]]/.test(command)) return [{ problem: "执行脚本路径包含动态展开，无法确定实际文件" }];
+  const tokens = commandTokens(command);
+  const refs: Array<{ path?: string; problem?: string; direct?: boolean }> = [];
+  let dir = workingDir;
+  const add = (raw: string | undefined, direct = false) => {
+    const value = literalToken(raw || "");
+    if (!value) {
+      refs.push({ problem: "执行脚本路径包含动态展开，无法确定实际文件" });
+      return;
+    }
+    refs.push({ path: resolve(dir, value), direct });
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const raw = literalToken(tokens[i]);
+    if (!raw) {
+      refs.push({ problem: "动态命令入口，无法确定是否执行脚本" });
+      continue;
+    }
+    const base = basename(raw);
+    if (base === "cd") {
+      const next = literalToken(tokens[++i] || "");
+      dir = next && next !== "-" ? resolve(dir, next) : "";
+      continue;
+    }
+    if (base === "source" || base === ".") {
+      add(tokens[++i]);
+      continue;
+    }
+    if (["env", "sudo", "exec", "nohup", "timeout"].includes(base)) continue;
+    if (SCRIPT_INTERPRETER.test(base)) {
+      for (i++; i < tokens.length; i++) {
+        const value = literalToken(tokens[i]);
+        if (!value) {
+          refs.push({ problem: "解释器参数包含动态展开，无法确定实际脚本" });
+          break;
+        }
+        if (["-c", "-e", "--eval", "--print"].includes(value)) {
+          if (value === "-c" && tokens[i + 1]) {
+            const inline = literalToken(tokens[++i]);
+            if (inline) refs.push(...captureReferences(inline, dir));
+            else refs.push({ problem: "Shell 内联执行内容不确定" });
+          }
+          break;
+        }
+        if (value === "-m" || value === "-") {
+          refs.push({ problem: "解释器未提供可确定的本地脚本文件" });
+          break;
+        }
+        if (value.startsWith("-")) continue;
+        add(tokens[i]);
+        break;
+      }
+      continue;
+    }
+    if (raw.includes("/") || SCRIPT_EXTENSIONS.has(extname(raw).toLowerCase())) add(tokens[i], true);
+  }
+  return refs;
+}
+
+export function captureScripts(workingDir: string, tool: string, args: Record<string, unknown>) {
+  if (!["Bash", "bash", "shell", "shell_open", "shell_send", "command", "script", "powershell", "PowerShell", "execute_command", "run_command", "terminal", "cmd"].includes(tool)) return { scriptFiles: [] as ReviewScript[], scriptCaptureStatus: "not_applicable" };
+  const key = tool === "shell_send" ? "text" : "command";
+  let command = typeof args[key] === "string" ? String(args[key]) : "";
+  if (!command.trim()) {
+    for (const candidate of ["script", "code", "cmd"]) {
+      if (typeof args[candidate] === "string") { command = String(args[candidate]); break; }
+    }
+  }
+  if (!command.trim()) return { scriptFiles: [] as ReviewScript[], scriptCaptureStatus: "not_applicable" };
+  const refs = captureReferences(command, workingDir);
+  const files: ReviewScript[] = [];
+  const seen = new Set<string>();
+  let status = "complete";
+  let total = 0;
+  for (const ref of refs) {
+    const key = `${ref.path || ""}:${ref.problem || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const file: ReviewScript = { path: ref.path || "<无法确定的脚本>", complete: false };
+    if (ref.problem) {
+      file.readError = ref.problem;
+      status = "incomplete";
+      files.push(file);
+      continue;
+    }
+    if (files.length >= MAX_SCRIPT_FILES) {
+      file.readError = "本次调用超过 8 个脚本文件";
+      status = "incomplete";
+      files.push(file);
+      break;
+    }
+    try {
+      const info = statSync(ref.path!);
+      if (!info.isFile()) throw new Error("不是普通文件");
+      if (info.size > MAX_SCRIPT_BYTES) {
+        file.bytes = info.size;
+        file.truncated = true;
+        file.readError = "脚本超过完整快照限制（1 MiB）";
+        status = "incomplete";
+        files.push(file);
+        continue;
+      }
+      const content = readFileSync(ref.path!);
+      file.bytes = content.length;
+      if (ref.direct && (content.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || content.subarray(0, 2).equals(Buffer.from([0x4d, 0x5a])))) continue;
+      if (tool === "shell_send") throw new Error("交互会话可能已切换目录或连接远端，无法确认本机文件就是实际执行脚本");
+      const text = content.toString("utf8");
+      if (!Buffer.from(text, "utf8").equals(content) || content.includes(0)) throw new Error("脚本不是有效 UTF-8 文本");
+      if (content.length > MAX_SCRIPT_BYTES || total + content.length > MAX_SCRIPT_BYTES) {
+        file.truncated = true;
+        file.readError = "脚本超过完整快照总量限制（1 MiB），未附加部分内容";
+        status = "incomplete";
+        files.push(file);
+        continue;
+      }
+      file.sha256 = createHash("sha256").update(content).digest("hex");
+      file.content = text;
+      file.complete = true;
+      total += content.length;
+      files.push(file);
+    } catch (error) {
+      file.readError = error instanceof Error ? error.message : "脚本读取失败";
+      status = "incomplete";
+      files.push(file);
+    }
+  }
+  return files.length ? { scriptFiles: files, scriptCaptureStatus: status } : { scriptFiles: [], scriptCaptureStatus: "not_applicable" };
+}
 
 export function isLoopbackHost(host: string): boolean {
   const value = host.replace(/^\[|\]$/g, "").toLowerCase();
@@ -203,6 +364,7 @@ export default function aegisHook(pi: ExtensionAPI) {
             callId: event.toolCallId,
             toolName: event.toolName,
             argumentsObj: event.input,
+            ...captureScripts(ctx.cwd, event.toolName, event.input as Record<string, unknown>),
             ...reviewContext(ctx.sessionManager.getBranch()),
           },
           signal,

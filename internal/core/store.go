@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -63,7 +64,7 @@ func Open(dir string) (*Engine, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id));`); err != nil {
+	if _, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE INDEX IF NOT EXISTS idx_records_reviews_created ON records(kind, json_extract(payload,'$.createdAt'));`); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -247,6 +248,112 @@ func (e *Engine) Reviews() ([]Review, error) {
 		reviews[i] = normalizeReviewPath(reviews[i])
 	}
 	return reviews, err
+}
+
+type ReviewFilter struct {
+	Query      string
+	Decision   string
+	Execution  string
+	ReviewPath string
+	SessionID  string
+	From       string
+	To         string
+}
+
+type ReviewPage struct {
+	Items        []Review `json:"items"`
+	Total        int      `json:"total"`
+	Page         int      `json:"page"`
+	PageSize     int      `json:"pageSize"`
+	PendingTotal int      `json:"pendingTotal"`
+}
+
+func ReviewListView(r Review) Review {
+	for i := range r.Scripts {
+		r.Scripts[i].Content = ""
+	}
+	r.ModelInput = nil
+	return r
+}
+
+func (e *Engine) ReviewsPage(page, pageSize int, filter ReviewFilter) (ReviewPage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	where := []string{"r.kind='reviews'"}
+	args := []any{}
+	add := func(expr string, value any) {
+		where = append(where, expr)
+		args = append(args, value)
+	}
+	if filter.Decision != "" {
+		add("json_extract(r.payload,'$.decision')=?", filter.Decision)
+	}
+	if filter.Execution != "" {
+		add("json_extract(r.payload,'$.execution')=?", filter.Execution)
+	}
+	if filter.ReviewPath != "" {
+		add("json_extract(r.payload,'$.reviewPath')=?", filter.ReviewPath)
+	}
+	if filter.SessionID != "" {
+		add("json_extract(r.payload,'$.sessionId')=?", filter.SessionID)
+	}
+	if filter.From != "" {
+		add("json_extract(r.payload,'$.createdAt')>=?", filter.From)
+	}
+	if filter.To != "" {
+		// The UI treats the end date as inclusive. Query the next midnight so
+		// records created at any time on the selected day are included.
+		if end, err := time.Parse("2006-01-02", filter.To); err == nil {
+			add("json_extract(r.payload,'$.createdAt')<?", end.AddDate(0, 0, 1).UTC().Format(time.RFC3339))
+		} else {
+			// API callers validate dates before reaching the engine; preserve the
+			// previous comparison for internal callers that pass an invalid value.
+			add("json_extract(r.payload,'$.createdAt')<?", filter.To+"T00:00:00Z")
+		}
+	}
+	if strings.TrimSpace(filter.Query) != "" {
+		needle := strings.ToLower(strings.TrimSpace(filter.Query))
+		where = append(where, `(instr(lower(r.id), ?) > 0 OR instr(lower(r.payload), ?) > 0)`)
+		args = append(args, needle, needle)
+	}
+	clause := " WHERE " + strings.Join(where, " AND ")
+	var total, pending int
+	if err := e.DB.QueryRow("SELECT COUNT(*) FROM records r"+clause, args...).Scan(&total); err != nil {
+		return ReviewPage{}, err
+	}
+	if err := e.DB.QueryRow("SELECT COUNT(*) FROM records r WHERE r.kind='reviews' AND json_extract(r.payload,'$.decision')='pending' AND json_extract(r.payload,'$.needsHuman')=1").Scan(&pending); err != nil {
+		return ReviewPage{}, err
+	}
+	offset := (page - 1) * pageSize
+	dataArgs := append(append([]any{}, args...), pageSize, offset)
+	rows, err := e.DB.Query("SELECT r.payload FROM records r"+clause+" ORDER BY json_extract(r.payload,'$.createdAt') DESC, r.id DESC LIMIT ? OFFSET ?", dataArgs...)
+	if err != nil {
+		return ReviewPage{}, err
+	}
+	defer rows.Close()
+	items := []Review{}
+	for rows.Next() {
+		var b []byte
+		var review Review
+		if err := rows.Scan(&b); err != nil {
+			return ReviewPage{}, err
+		}
+		if err := json.Unmarshal(b, &review); err != nil {
+			return ReviewPage{}, err
+		}
+		items = append(items, ReviewListView(normalizeReviewPath(review)))
+	}
+	if err := rows.Err(); err != nil {
+		return ReviewPage{}, err
+	}
+	return ReviewPage{Items: items, Total: total, Page: page, PageSize: pageSize, PendingTotal: pending}, nil
 }
 func (e *Engine) Rules() ([]Rule, error) {
 	rules, err := list[Rule](e, "rules")

@@ -21,7 +21,7 @@ func assertCurrentModelInput(t *testing.T, body []byte, tool string, args map[st
 		t.Error(err)
 		return
 	}
-	want := map[string]any{"hitlMode": "model", "toolName": tool, "argumentsObj": args}
+	want := map[string]any{"version": float64(1), "hitlMode": "model", "toolName": tool, "argumentsObj": args}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("expected only current call: got %s, want %+v", body, want)
 	}

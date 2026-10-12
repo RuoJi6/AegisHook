@@ -12,6 +12,7 @@ import type {
   ClientNode,
   ClientRequest,
   ClientIPBlock,
+  ReviewPage,
 } from "./types";
 export const isOnlineInstance = (i: Instance) =>
   i.online && i.state !== "disconnected" && i.connectionMode !== "events";
@@ -48,6 +49,10 @@ export const useConsole = defineStore("console", () => {
     loading = ref(false),
     streamOnline = ref(false);
   const calls = ref<Call[]>([]),
+    approvalCalls = ref<Call[]>([]),
+    pendingCalls = ref<Call[]>([]),
+    approvalTotal = ref(0),
+    approvalPendingTotal = ref(0),
     clientNodes = ref<ClientNode[]>([]),
     clientRequests = ref<ClientRequest[]>([]),
     clientBlocks = ref<ClientIPBlock[]>([]),
@@ -61,9 +66,7 @@ export const useConsole = defineStore("console", () => {
     settings = ref<Settings | null>(null),
     pi = ref<any>({}),
     agents = ref<AgentInfo[]>([]);
-  const pending = computed(() =>
-    calls.value.filter((c) => c.decision === "pending" && c.mode === "human"),
-  );
+  const pending = computed(() => pendingCalls.value.filter((c) => c.decision === "pending" && c.mode === "human"));
   const online = computed(
     () => instances.value.filter(isOnlineInstance).length,
   );
@@ -92,9 +95,11 @@ export const useConsole = defineStore("console", () => {
     if (loading.value) return;
     loading.value = true;
     try {
-      const [c, i, inst, r, sc, a, s, u, nodes, requests, blocks] =
+      const [c, page, pendingPage, i, inst, r, sc, a, s, u, nodes, requests, blocks] =
         await Promise.all([
           api<Call[]>("/calls"),
+          api<ReviewPage>("/calls?page=1&size=20"),
+          api<ReviewPage>("/calls?page=1&size=100&decision=pending"),
           api<Instance[]>("/instances"),
           api<Installation[]>("/installations"),
           api<Rule[]>("/rules"),
@@ -107,6 +112,10 @@ export const useConsole = defineStore("console", () => {
           api<ClientIPBlock[]>("/client-ip-blocks"),
         ]);
       calls.value = c;
+      approvalCalls.value = page.items;
+      pendingCalls.value = pendingPage.items;
+      approvalTotal.value = page.total;
+      approvalPendingTotal.value = page.pendingTotal;
       instances.value = i;
       installations.value = inst;
       rules.value = r;
@@ -124,6 +133,19 @@ export const useConsole = defineStore("console", () => {
     } finally {
       loading.value = false;
     }
+  }
+  async function loadApprovalCalls(params: Record<string, string | number | undefined> = {}) {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page || 1));
+    query.set("size", String(params.size || 20));
+    for (const [key, value] of Object.entries(params)) {
+      if (key !== "page" && key !== "size" && value !== undefined && String(value) !== "") query.set(key, String(value));
+    }
+    const page = await api<ReviewPage>(`/calls?${query.toString()}`);
+    approvalCalls.value = page.items;
+    approvalTotal.value = page.total;
+    approvalPendingTotal.value = page.pendingTotal;
+    return page;
   }
   function connect() {
     stream?.close();
@@ -193,6 +215,10 @@ export const useConsole = defineStore("console", () => {
     loading,
     streamOnline,
     calls,
+    approvalCalls,
+    pendingCalls,
+    approvalTotal,
+    approvalPendingTotal,
     clientNodes,
     clientRequests,
     clientBlocks,
@@ -213,6 +239,7 @@ export const useConsole = defineStore("console", () => {
     sessionSummary,
     sortedInstances,
     refresh,
+    loadApprovalCalls,
     init,
     login,
     logout,

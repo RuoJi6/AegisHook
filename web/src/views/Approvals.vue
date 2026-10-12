@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import {
   api,
@@ -12,40 +12,47 @@ import {
   matchedRuleName,
 } from "../store";
 import type { Call } from "../types";
-import { usePagination } from "../pagination";
 import Pagination from "../components/Pagination.vue";
 import Icon from "../components/Icon.vue";
 import AppSelect from "../components/AppSelect.vue";
+import AppDatePicker from "../components/AppDatePicker.vue";
 import CallDetail from "../components/CallDetail.vue";
 const store = useConsole(),
   route = useRoute();
 const tab = ref("all"),
   search = ref(""),
+  reviewPath = ref(""),
+  execution = ref(""),
+  from = ref(""),
+  to = ref(""),
   expanded = ref(""),
   pendingExpanded = ref(""),
   busy = ref(""),
   rejecting = ref<Call | null>(null),
   reason = ref("");
 const isCalls = computed(() => route.path === "/calls");
-const filtered = computed(() =>
-  store.calls.filter(
-    (c) =>
-      (tab.value === "all" || c.decision === tab.value) &&
-      JSON.stringify(c)
-        .toLowerCase()
-        .includes((search.value || String(route.query.q || "")).toLowerCase()),
-  ),
-);
-const recordsPage = usePagination(
-  () => filtered.value,
-  [tab, search, () => route.query.q, () => route.path],
-);
-const pendingPage = usePagination(() => store.pending, [() => route.path]);
+const recordsPage = reactive({ page: 1, pageSize: 20, total: 0, rows: [] as Call[] });
+const pendingPage = reactive({ page: 1, pageSize: 100, total: 0, rows: [] as Call[] });
 const tabs = [
   ["all", "全部记录"],
   ["reject", "已拒绝"],
   ["approve", "已允许"],
   ["pending", "待审批"],
+];
+const reviewPathOptions = [
+  ["", "全部方式"],
+  ["scope", "范围校验"],
+  ["rule", "规则审批"],
+  ["human", "人工审批"],
+  ["model", "模型审批"],
+];
+const executionOptions = [
+  ["", "全部执行"],
+  ["not_executed", "未执行"],
+  ["awaiting_execution", "等待执行"],
+  ["succeeded", "执行成功"],
+  ["failed", "执行失败"],
+  ["unknown", "执行未知"],
 ];
 async function decide(c: Call, d: string) {
   busy.value = c.id;
@@ -64,6 +71,34 @@ async function decide(c: Call, d: string) {
   }
   busy.value = "";
 }
+async function loadRecords() {
+  recordsPage.page = Math.max(1, recordsPage.page);
+  const page = await store.loadApprovalCalls({
+    page: recordsPage.page,
+    size: recordsPage.pageSize,
+    q: search.value || String(route.query.q || ""),
+    decision: tab.value === "all" ? undefined : tab.value,
+    reviewPath: reviewPath.value,
+    execution: execution.value,
+    from: from.value,
+    to: to.value,
+  });
+  recordsPage.total = page.total;
+  recordsPage.rows = page.items;
+}
+watch([tab, search, reviewPath, execution, from, to, () => route.query.q], () => {
+  recordsPage.page = 1;
+  void loadRecords();
+}, { immediate: true });
+watch([() => recordsPage.page, () => recordsPage.pageSize], () => void loadRecords());
+watch(
+  () => [store.approvalPendingTotal, store.pending, pendingPage.page, pendingPage.pageSize],
+  () => {
+    pendingPage.total = store.pending.length;
+    pendingPage.rows = store.pending.slice((pendingPage.page - 1) * pendingPage.pageSize, pendingPage.page * pendingPage.pageSize);
+  },
+  { immediate: true },
+);
 </script>
 <template>
   <div class="page-heading">
@@ -187,7 +222,7 @@ async function decide(c: Call, d: string) {
   </section>
   <section class="panel records">
     <div class="records-heading">
-      <h2>全部记录 ({{ store.calls.length }})</h2>
+      <h2>全部记录 ({{ recordsPage.total }})</h2>
       <div class="record-filters">
         <div class="search-input">
           <Icon name="Search" :size="15" /><input
@@ -201,6 +236,18 @@ async function decide(c: Call, d: string) {
           label="筛选裁决"
           :options="tabs.map((t) => ({ value: t[0]!, label: t[1]! }))"
         />
+        <AppSelect
+          v-model="reviewPath"
+          label="筛选审批方式"
+          :options="reviewPathOptions.map((t) => ({ value: t[0]!, label: t[1]! }))"
+        />
+        <AppSelect
+          v-model="execution"
+          label="筛选执行状态"
+          :options="executionOptions.map((t) => ({ value: t[0]!, label: t[1]! }))"
+        />
+        <AppDatePicker v-model="from" label="开始日期" prefix="从" />
+        <AppDatePicker v-model="to" label="结束日期" prefix="至" />
         <a
           class="icon-button"
           href="/api/v1/calls/export"
@@ -309,7 +356,7 @@ async function decide(c: Call, d: string) {
           <tr v-if="!recordsPage.rows.length">
             <td colspan="9" class="empty-cell">
               {{
-                store.calls.length ? "没有符合条件的记录" : "暂无工具调用记录"
+                recordsPage.total ? "没有符合条件的记录" : "暂无工具调用记录"
               }}
             </td>
           </tr>

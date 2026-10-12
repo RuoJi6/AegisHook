@@ -207,7 +207,8 @@ func Run(agent, connection string, in io.Reader, out, stderr io.Writer) (code in
 	if tool == "" || args == nil {
 		return deny(errors.New("工具名称或参数对象缺失"))
 	}
-	input := core.ReviewInput{InstanceID: instance, CallID: callID, ToolName: tool, Arguments: args, UserMessage: text(m, "userMessage"), Context: text(m, "context")}
+	scriptFiles, scriptStatus := core.CaptureScripts(cwd, tool, args)
+	input := core.ReviewInput{InstanceID: instance, CallID: callID, ToolName: tool, Arguments: args, UserMessage: text(m, "userMessage"), Context: text(m, "context"), Scripts: scriptFiles, ScriptCaptureStatus: scriptStatus}
 	if input.UserMessage == "" {
 		var saved map[string]string
 		if b, err = os.ReadFile(contextPath); err == nil && json.Unmarshal(b, &saved) == nil {

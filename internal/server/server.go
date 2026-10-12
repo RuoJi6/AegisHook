@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -56,10 +57,10 @@ func fail(w http.ResponseWriter, status int, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": core.RedactText(err.Error())})
 }
 func read(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
 	d := json.NewDecoder(r.Body)
 	if err := d.Decode(v); err != nil {
-		fail(w, 400, errors.New("JSON 请求无效或超过 256 KB"))
+		fail(w, 400, errors.New("JSON 请求无效或超过 2 MB"))
 		return false
 	}
 	return true
@@ -367,22 +368,34 @@ func (s *Server) Handler() http.Handler {
 		write(w, v)
 	})
 	mux.HandleFunc("GET /api/v1/calls", func(w http.ResponseWriter, r *http.Request) {
-		v, err := s.Engine.Reviews()
+		q := r.URL.Query()
+		if !hasReviewPageQuery(q) {
+			v, err := s.Engine.Reviews()
+			if err != nil {
+				fail(w, 500, err)
+				return
+			}
+			if len(v) > 200 {
+				v = v[:200]
+			}
+			out := make([]core.Review, 0, len(v))
+			for _, review := range v {
+				out = append(out, core.ReviewListView(review))
+			}
+			write(w, out)
+			return
+		}
+		page, size, filter, err := reviewPageParams(q)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		v, err := s.Engine.ReviewsPage(page, size, filter)
 		if err != nil {
 			fail(w, 500, err)
 			return
 		}
-		out := []core.Review{}
-		for _, review := range v {
-			if q := r.URL.Query().Get("sessionId"); q != "" && review.SessionID != q {
-				continue
-			}
-			if q := r.URL.Query().Get("decision"); q != "" && review.Decision != q {
-				continue
-			}
-			out = append(out, review)
-		}
-		write(w, out)
+		write(w, v)
 	})
 	mux.HandleFunc("GET /api/v1/calls/export", func(w http.ResponseWriter, r *http.Request) {
 		b, err := s.Engine.ExportCalls()
@@ -606,6 +619,67 @@ func hookAllowed(r *http.Request) bool {
 	p := r.URL.Path
 	return (r.Method == "POST" && (p == "/api/v1/instances" || p == "/api/v1/reviews" || strings.HasPrefix(p, "/api/v1/instances/") || strings.HasPrefix(p, "/api/v1/reviews/"))) || (r.Method == "GET" && strings.HasPrefix(p, "/api/v1/reviews/"))
 }
+
+func hasReviewPageQuery(q url.Values) bool {
+	for _, key := range []string{"page", "size", "q", "decision", "execution", "reviewPath", "sessionId", "from", "to"} {
+		if q.Get(key) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func reviewPageParams(q url.Values) (int, int, core.ReviewFilter, error) {
+	page, size := 1, 20
+	var err error
+	if value := q.Get("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil || page < 1 {
+			return 0, 0, core.ReviewFilter{}, errors.New("page 必须是正整数")
+		}
+	}
+	if value := q.Get("size"); value != "" {
+		size, err = strconv.Atoi(value)
+		if err != nil || size < 1 || size > 100 {
+			return 0, 0, core.ReviewFilter{}, errors.New("size 必须是 1 到 100")
+		}
+	}
+	filter := core.ReviewFilter{Query: strings.TrimSpace(q.Get("q")), Decision: q.Get("decision"), Execution: q.Get("execution"), ReviewPath: q.Get("reviewPath"), SessionID: q.Get("sessionId"), From: q.Get("from"), To: q.Get("to")}
+	if len([]rune(filter.Query)) > 200 {
+		return 0, 0, core.ReviewFilter{}, errors.New("q 不能超过 200 个字符")
+	}
+	if !validReviewChoice(filter.Decision, "", "pending", "approve", "reject") {
+		return 0, 0, core.ReviewFilter{}, errors.New("decision 无效")
+	}
+	if !validReviewChoice(filter.Execution, "", "not_executed", "awaiting_execution", "succeeded", "failed", "unknown") {
+		return 0, 0, core.ReviewFilter{}, errors.New("execution 无效")
+	}
+	if !validReviewChoice(filter.ReviewPath, "", "scope", "rule", "human", "model") {
+		return 0, 0, core.ReviewFilter{}, errors.New("reviewPath 无效")
+	}
+	for name, value := range map[string]string{"from": filter.From, "to": filter.To} {
+		if value == "" {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			return 0, 0, core.ReviewFilter{}, fmt.Errorf("%s 必须是 YYYY-MM-DD 日期", name)
+		}
+	}
+	if filter.From != "" && filter.To != "" && filter.From > filter.To {
+		return 0, 0, core.ReviewFilter{}, errors.New("from 不能晚于 to")
+	}
+	return page, size, filter, nil
+}
+
+func validReviewChoice(value string, choices ...string) bool {
+	for _, choice := range choices {
+		if value == choice {
+			return true
+		}
+	}
+	return false
+}
+
 func hookView(r core.Review) map[string]any {
 	return map[string]any{"id": r.ID, "decision": r.Decision, "comment": r.Comment, "ruleId": r.RuleID, "reviewPath": r.ReviewPath, "deadline": r.Deadline, "execution": r.Execution}
 }

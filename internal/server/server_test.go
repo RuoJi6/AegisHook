@@ -45,6 +45,42 @@ func TestRuleFirstHookResponse(t *testing.T) {
 	}
 }
 
+func TestCallsPageSearchAndValidation(t *testing.T) {
+	e, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	if err := e.Register(core.Instance{ID: "fixture", Agent: "claude", SessionID: "fixture", Cwd: t.TempDir(), HookVersion: core.Version}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Submit(core.ReviewInput{InstanceID: "fixture", CallID: "page", ToolName: "Bash", Arguments: map[string]any{"command": "echo page-search"}}); err != nil {
+		t.Fatal(err)
+	}
+	h := New(e, fstest.MapFS{}, "fixture-admin", "fixture-hook", t.TempDir()).Handler()
+	login := httptest.NewRequest("POST", "http://127.0.0.1:18790/api/v1/login", strings.NewReader(`{"token":"fixture-admin"}`))
+	loginW := httptest.NewRecorder()
+	h.ServeHTTP(loginW, login)
+	if loginW.Code != 200 {
+		t.Fatal(loginW.Body.String())
+	}
+	pageReq := httptest.NewRequest("GET", "http://127.0.0.1:18790/api/v1/calls?page=1&size=1&q=page-search", nil)
+	pageReq.AddCookie(loginW.Result().Cookies()[0])
+	pageW := httptest.NewRecorder()
+	h.ServeHTTP(pageW, pageReq)
+	var page map[string]any
+	if err := json.Unmarshal(pageW.Body.Bytes(), &page); err != nil || pageW.Code != 200 || page["total"] != float64(1) {
+		t.Fatalf("page status=%d body=%s err=%v", pageW.Code, pageW.Body.String(), err)
+	}
+	bad := httptest.NewRequest("GET", "http://127.0.0.1:18790/api/v1/calls?size=101", nil)
+	bad.AddCookie(loginW.Result().Cookies()[0])
+	badW := httptest.NewRecorder()
+	h.ServeHTTP(badW, bad)
+	if badW.Code != 400 {
+		t.Fatalf("invalid size accepted: %d", badW.Code)
+	}
+}
+
 func TestAuthBoundaries(t *testing.T) {
 	e, err := core.Open(t.TempDir())
 	if err != nil {

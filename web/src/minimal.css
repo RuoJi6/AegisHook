@@ -297,6 +297,8 @@ td .tool-tag {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .record-filters .search-input {
   width: 175px;
@@ -307,8 +309,13 @@ td .tool-tag {
   width: 98px;
   font-size: 12px;
   height: 28px;
+  min-height: 28px;
   padding: 3px 8px;
   background: var(--surface);
+}
+.record-filters .icon-button {
+  width: 28px;
+  height: 28px;
 }
 .review-table {
   table-layout: fixed;

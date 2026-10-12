@@ -126,9 +126,10 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		return Review{}, errors.New("审查参数缺失")
 	}
 	b, err := json.Marshal(struct {
-		Tool string
-		Args map[string]any
-	}{in.ToolName, in.Arguments})
+		Tool    string
+		Args    map[string]any
+		Scripts string
+	}{in.ToolName, in.Arguments, scriptDigest(in.ScriptCaptureStatus, in.Scripts)})
 	if err != nil {
 		return Review{}, err
 	}
@@ -171,11 +172,16 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		path = "rule"
 		d = evaluatePaths(in, rules, i.Cwd, resolve)
 	}
+	forcedHuman := false
+	if d != nil && d.Decision == "approve" && in.ScriptCaptureStatus == "incomplete" {
+		forcedHuman = true
+		d = nil
+	}
 	s := e.Settings
 	in.Arguments = Redact(in.Arguments).(map[string]any)
 	in.UserMessage = RedactText(in.UserMessage)
 	in.Context = RedactText(in.Context)
-	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, Rules: rules, Scopes: applicable, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
+	r := Review{Agent: AgentID(i.Agent), ID: id, ReviewInput: in, SessionID: i.SessionID, Cwd: i.Cwd, Digest: hex.EncodeToString(digest[:]), Mode: s.Mode, Version: s.Version, Prompt: s.Prompt, ModelName: s.Model.Model, Rules: rules, Scopes: applicable, Decision: "pending", Execution: "not_executed", CreatedAt: e.clock(), Deadline: e.clock().Add(time.Duration(s.ApprovalSeconds) * time.Second)}
 	if d != nil {
 		r.ReviewPath = path
 		r.Decision = d.Decision
@@ -190,13 +196,21 @@ func (e *Engine) Submit(in ReviewInput) (Review, error) {
 		return r, e.commitReview(r, "review.submit")
 	}
 	r.ReviewPath = s.Mode
-	r.NeedsHuman = s.Mode == "human"
-	if s.Mode == "model" {
+	r.NeedsHuman = s.Mode == "human" || forcedHuman
+	if forcedHuman {
+		r.ReviewPath = "human"
+		r.Comment = "脚本未能完整采集，无法排除隐藏副作用，需要人工确认。"
+	}
+	if s.Mode == "model" && !forcedHuman {
 		s.Prompt = modelPrompt(s.Prompt)
 		r.Prompt = s.Prompt
 		// Explicitly record that no historical context was sent for this review.
 		emptyContext := ""
 		r.ModelContext = &emptyContext
+		modelBytes, _ := json.Marshal(modelInput(r))
+		r.ModelInput = modelBytes
+		modelHash := sha256.Sum256(modelBytes)
+		r.ModelInputDigest = hex.EncodeToString(modelHash[:])
 		r.Deadline = e.clock().Add(time.Duration(s.ModelSeconds+5) * time.Second)
 	}
 	if err = e.commitReview(r, "review.submit"); err != nil {
@@ -245,7 +259,7 @@ func (e *Engine) Decide(id, digest, decision, comment string) (Review, error) {
 	if !hasExact(decision, "approve", "reject") {
 		return r, errors.New("无效裁决")
 	}
-	if r.Mode != "human" {
+	if r.Mode != "human" && r.ReviewPath != "human" {
 		return r, errors.New("此调用不属于人工审批")
 	}
 	if r.Decision != "pending" {

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { isLoopbackHost, validateDecision, reviewContext } from "./index";
+import { captureScripts, isLoopbackHost, validateDecision, reviewContext } from "./index";
 const root = dirname(fileURLToPath(import.meta.url));
 const piRequire = createRequire(
   join(root, "node_modules/@earendil-works/pi-coding-agent/package.json"),
@@ -109,6 +109,23 @@ test("invalid decisions are fail-closed", () => {
     { id: "r", decision: "approve", deadline: "invalid" },
   ])
     assert.throws(() => validateDecision(value));
+});
+
+test("script snapshots capture literal files and reject dynamic paths", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "aegis-script-test-"));
+  try {
+    await writeFile(join(dir, "check.py"), "print('fixture')\n");
+    const complete = captureScripts(dir, "Bash", { command: "python check.py" });
+    assert.equal(complete.scriptCaptureStatus, "complete");
+    assert.equal(complete.scriptFiles.length, 1);
+    assert.equal(complete.scriptFiles[0].complete, true);
+    assert.equal(complete.scriptFiles[0].content, "print('fixture')\n");
+    const incomplete = captureScripts(dir, "Bash", { command: "python $SCRIPT" });
+    assert.equal(incomplete.scriptCaptureStatus, "incomplete");
+    assert.equal(incomplete.scriptFiles[0].complete, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("Pi 0.85.1 loader, real agent loop, Go review, feedback and lifecycle", async () => {

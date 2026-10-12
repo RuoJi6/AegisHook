@@ -15,6 +15,11 @@ export interface Call {
   rules?: Rule[];
   needsHuman?: boolean;
   modelVerdict?: { decision: string; comment: string; ruleId: string };
+  scriptCaptureStatus?: "not_applicable" | "complete" | "incomplete";
+  scriptFiles?: ReviewScript[];
+  modelInput?: unknown;
+  modelInputDigest?: string;
+  modelName?: string;
   version: number;
   prompt: string;
   decision: string;
@@ -25,6 +30,22 @@ export interface Call {
   createdAt: string;
   decidedAt: string | null;
   deadline: string;
+}
+export interface ReviewScript {
+  path: string;
+  sha256?: string;
+  bytes?: number;
+  content?: string;
+  complete: boolean;
+  truncated?: boolean;
+  readError?: string;
+}
+export interface ReviewPage {
+  items: Call[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pendingTotal: number;
 }
 export interface Instance {
   nodeId?: string;

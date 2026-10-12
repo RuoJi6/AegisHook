@@ -255,6 +255,17 @@ func (e *Engine) modelReview(r Review, s Settings) {
 		return
 	}
 	current.ModelVerdict = &d
+	if current.ScriptCaptureStatus == "incomplete" && d.Decision == "approve" {
+		current.Decision = "pending"
+		current.NeedsHuman = true
+		current.ReviewPath = "human"
+		current.RuleID = ""
+		current.Comment = "脚本未能完整采集，无法排除隐藏副作用，需要人工确认。"
+		current.DecidedAt = nil
+		current.Execution = "not_executed"
+		e.commitReview(current, "review.model.incomplete")
+		return
+	}
 	current.Decision = d.Decision
 	current.RuleID = d.RuleID
 	current.Comment = d.Comment
