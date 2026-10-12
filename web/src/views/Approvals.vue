@@ -95,6 +95,10 @@ watch(
   () => [store.approvalPendingTotal, store.pending, pendingPage.page, pendingPage.pageSize],
   () => {
     pendingPage.total = store.pending.length;
+    pendingPage.page = Math.min(
+      pendingPage.page,
+      Math.max(1, Math.ceil(pendingPage.total / pendingPage.pageSize)),
+    );
     pendingPage.rows = store.pending.slice((pendingPage.page - 1) * pendingPage.pageSize, pendingPage.page * pendingPage.pageSize);
   },
   { immediate: true },
